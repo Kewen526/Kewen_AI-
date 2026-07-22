@@ -406,18 +406,9 @@ const renderCreatePanel = () => {
   const families = familyOptions();
   return `
     <aside class="create-panel">
-      <div class="panel-head">
-        <div>
-          <span class="eyebrow">Image Generation</span>
-          <h1>生成商品实拍图</h1>
-        </div>
-        <span class="balance">${Number(state.user?.points || 0).toLocaleString("zh-CN")} 分</span>
-      </div>
-
       <section class="field-group">
         <div class="group-title">
           <strong>模型</strong>
-          <span>由后端动态提供</span>
         </div>
         <div class="model-list">
           ${families.map(renderFamilyCard).join("") || `<div class="muted">${copy.noModel}</div>`}
@@ -464,21 +455,6 @@ const renderCreatePanel = () => {
 
 const renderSidePanel = () => `
   <aside class="side-panel">
-    <section class="quick-card">
-      <div class="quick-metric">
-        <span>可用模型</span>
-        <strong>${familyOptions().length}</strong>
-      </div>
-      <div class="quick-metric">
-        <span>进行中</span>
-        <strong>${pendingCount()}</strong>
-      </div>
-      <div class="quick-metric">
-        <span>失败</span>
-        <strong>${failedCount()}</strong>
-      </div>
-    </section>
-
     <section class="api-shortcut">
       <div>
         <strong>需要接入业务系统？</strong>
