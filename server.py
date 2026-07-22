@@ -692,7 +692,7 @@ async def create_image_task(
                 actual_flow_model = flow_model
                 break
             except Flow2APIError as exc:
-                attempted_errors.append(f"{flow_model}: HTTP {exc.status_code} {exc.message}")
+                attempted_errors.append(f"{candidate_model}: HTTP {exc.status_code} {exc.message}")
                 if exc.status_code < 500:
                     raise
                 continue
