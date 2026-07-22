@@ -422,8 +422,12 @@ a {
 
 .split-controls {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .chips {
@@ -560,7 +564,7 @@ a {
 .result-panel {
   min-width: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
   background: rgba(10, 11, 13, 0.78);
 }
@@ -610,30 +614,6 @@ a {
   border-radius: 8px;
   display: block;
   box-shadow: 0 20px 70px rgba(0, 0, 0, 0.42);
-}
-
-.result-strip {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 8px;
-  padding: 10px;
-  border-top: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.025);
-}
-
-.result-tile {
-  height: 72px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  overflow: hidden;
-  background: #07080a;
-}
-
-.result-tile img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
 }
 
 .result-panel.empty {
@@ -729,10 +709,18 @@ a {
   grid-template-columns: 52px 1fr auto;
   gap: 9px;
   align-items: center;
+  width: 100%;
   padding: 8px;
   border: 1px solid var(--line);
   border-radius: 8px;
+  color: var(--text);
+  text-align: left;
   background: rgba(255, 255, 255, 0.04);
+}
+
+.task-item.clickable:hover {
+  border-color: rgba(255, 180, 95, 0.45);
+  background: rgba(255, 180, 95, 0.07);
 }
 
 .task-thumb {
@@ -767,6 +755,99 @@ a {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.task-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(10px);
+}
+
+.task-dialog {
+  width: min(1040px, 100%);
+  max-height: min(860px, calc(100vh - 56px));
+  display: grid;
+  grid-template-rows: auto minmax(260px, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: rgba(18, 20, 25, 0.98);
+  box-shadow: var(--shadow);
+}
+
+.task-dialog-head {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.task-dialog-head div {
+  display: grid;
+  gap: 3px;
+}
+
+.task-dialog-head span,
+.task-dialog-prompt span,
+.task-dialog-error span {
+  color: var(--subtle);
+  font-size: 12px;
+}
+
+.task-dialog-image {
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  padding: 14px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    #07080a;
+  background-size: 34px 34px;
+}
+
+.task-dialog-image img {
+  max-width: 100%;
+  max-height: 58vh;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.task-dialog-empty {
+  display: grid;
+  place-items: center;
+  min-height: 260px;
+  color: var(--muted);
+  background: #07080a;
+}
+
+.task-dialog-prompt,
+.task-dialog-error {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.task-dialog-prompt p,
+.task-dialog-error p {
+  margin: 0;
+  color: var(--text);
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.task-dialog-error p {
+  color: var(--red);
 }
 
 .status {
@@ -1052,10 +1133,6 @@ a {
 
   .generate-bar {
     grid-template-columns: 1fr;
-  }
-
-  .result-strip {
-    grid-template-columns: repeat(3, 1fr);
   }
 
   .task-item {

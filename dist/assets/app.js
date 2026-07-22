@@ -13,6 +13,7 @@ const state = {
   selectedResolution: "",
   files: [],
   tasks: [],
+  selectedTaskId: "",
   generating: false,
   prompt: "",
   toast: "",
@@ -136,11 +137,14 @@ const familyOptions = () => {
   const families = new Map();
   state.models.forEach((model) => {
     if (!families.has(model.family_id)) {
+      const familyModels = state.models.filter((item) => item.family_id === model.family_id);
+      const costs = [...new Set(familyModels.map((item) => Number(item.points_cost || 0)))].sort((a, b) => a - b);
       families.set(model.family_id, {
         id: model.family_id,
         name: model.family,
         shortName: model.short_name,
         cost: model.points_cost,
+        costLabel: costs.length > 1 ? `${costs[0]}-${costs[costs.length - 1]} 分` : `${costs[0] || model.points_cost} 分`,
         tier: model.tier,
         description: familyDescription(model.family_id),
       });
@@ -256,6 +260,7 @@ const generate = async () => {
 
 const latestSuccessfulTask = () => state.tasks.find((task) => task.status === "success" && task.result_image_url);
 const successfulTasks = () => state.tasks.filter((task) => task.status === "success" && task.result_image_url).slice(0, 8);
+const selectedTask = () => state.tasks.find((task) => task.task_id === state.selectedTaskId);
 const pendingCount = () => state.tasks.filter((task) => ["pending", "processing"].includes(task.status)).length;
 const failedCount = () => state.tasks.filter((task) => task.status === "failed").length;
 const currentCost = () => Number(selectedModel()?.points_cost || 0);
@@ -336,7 +341,7 @@ const renderFamilyCard = (family) => `
       <strong>${escapeHtml(family.name)}</strong>
       <small>${escapeHtml(family.description)}</small>
     </span>
-    <span class="cost">${family.cost} 分</span>
+    <span class="cost">${escapeHtml(family.costLabel)}</span>
   </button>
 `;
 
@@ -355,8 +360,9 @@ const renderSelector = (title, helper, values, selected, attr) => `
 const renderTask = (task) => {
   const statusText = task.status === "success" ? "完成" : task.status === "failed" ? "失败" : "进行中";
   const statusClass = task.status === "success" ? "ok" : task.status === "failed" ? "failed" : "working";
+  const canPreview = task.result_image_url || task.prompt || task.prompt_text;
   return `
-    <article class="task-item">
+    <button class="task-item ${canPreview ? "clickable" : ""}" type="button" data-task-id="${escapeHtml(task.task_id)}">
       ${task.result_image_url ? `<img class="task-thumb" src="${escapeHtml(task.result_image_url)}" alt="生成结果" />` : `<div class="task-thumb blank"></div>`}
       <div class="task-body">
         <div class="task-prompt">${escapeHtml(task.prompt_text || task.prompt || "未记录提示词")}</div>
@@ -364,13 +370,12 @@ const renderTask = (task) => {
         ${task.error_msg ? `<div class="task-error">${escapeHtml(task.error_msg)}</div>` : ""}
       </div>
       <span class="status ${statusClass}">${statusText}</span>
-    </article>
+    </button>
   `;
 };
 
 const renderResultPanel = () => {
   const latest = latestSuccessfulTask();
-  const results = successfulTasks();
   if (!latest) {
     return `
       <section class="result-panel empty">
@@ -392,15 +397,6 @@ const renderResultPanel = () => {
       <div class="result-stage">
         <img src="${escapeHtml(latest.result_image_url)}" alt="最新生成结果" />
       </div>
-      ${results.length > 1 ? `
-        <div class="result-strip">
-          ${results.slice(1).map((task) => `
-            <a class="result-tile" href="${escapeHtml(task.result_image_url)}" target="_blank" rel="noreferrer">
-              <img src="${escapeHtml(task.result_image_url)}" alt="历史生成结果" />
-            </a>
-          `).join("")}
-        </div>
-      ` : ""}
     </section>
   `;
 };
@@ -589,6 +585,42 @@ const renderApiDocs = () => {
   `;
 };
 
+const renderTaskModal = () => {
+  const task = selectedTask();
+  if (!task) return "";
+  const prompt = task.prompt_text || task.prompt || "未记录提示词";
+  return `
+    <section class="task-modal" data-close-task-modal>
+      <article class="task-dialog" role="dialog" aria-modal="true" aria-label="任务详情">
+        <div class="task-dialog-head">
+          <div>
+            <strong>任务详情</strong>
+            <span>${escapeHtml(String(task.created_at || "").slice(0, 16).replace("T", " "))} · ${Number(task.points_cost || 0)} 分</span>
+          </div>
+          <button class="ghost-btn" type="button" data-close-task-modal>关闭</button>
+        </div>
+        ${task.result_image_url ? `
+          <div class="task-dialog-image">
+            <img src="${escapeHtml(task.result_image_url)}" alt="生成结果大图" />
+          </div>
+        ` : `
+          <div class="task-dialog-empty">这个任务没有返回图片。</div>
+        `}
+        <div class="task-dialog-prompt">
+          <span>提示词</span>
+          <p>${escapeHtml(prompt)}</p>
+        </div>
+        ${task.error_msg ? `
+          <div class="task-dialog-error">
+            <span>错误信息</span>
+            <p>${escapeHtml(task.error_msg)}</p>
+          </div>
+        ` : ""}
+      </article>
+    </section>
+  `;
+};
+
 const renderWorkspace = () => `
   <div class="app-shell">
     <header class="topbar">
@@ -604,6 +636,7 @@ const renderWorkspace = () => `
       </div>
     </header>
     ${state.view === "api" ? renderApiDocs() : renderStudio()}
+    ${renderTaskModal()}
   </div>
 `;
 
@@ -629,6 +662,22 @@ const wireEvents = () => {
   });
 
   document.querySelector("[data-rotate-api-key]")?.addEventListener("click", rotateApiKey);
+
+  document.querySelectorAll("[data-task-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.selectedTaskId = button.dataset.taskId || "";
+      render();
+    });
+  });
+
+  document.querySelectorAll("[data-close-task-modal]").forEach((element) => {
+    element.addEventListener("click", (event) => {
+      if (event.target === element || element.tagName === "BUTTON") {
+        state.selectedTaskId = "";
+        render();
+      }
+    });
+  });
 
   document.querySelectorAll("[data-family-id]").forEach((button) => {
     button.addEventListener("click", () => {

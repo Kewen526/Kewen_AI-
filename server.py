@@ -33,8 +33,16 @@ FLOW2API_KEY = os.getenv("FLOW2API_KEY", "han1234")
 FLOW2API_TIMEOUT = float(os.getenv("FLOW2API_TIMEOUT", "360"))
 
 IMAGE_COSTS = {
-    "nano-banana-2": 5,
-    "nano-banana-pro": 6,
+    "nano-banana-2": {
+        "1K": 5,
+        "2K": 6,
+        "4K": 7,
+    },
+    "nano-banana-pro": {
+        "1K": 6,
+        "2K": 7,
+        "4K": 9,
+    },
 }
 
 API_KEY_PREFIX = "kwapi_"
@@ -286,16 +294,20 @@ def image_model_catalog() -> list[dict[str, Any]]:
                         "aspect_ratio": aspect_ratio,
                         "aspect_label": ASPECT_LABELS[aspect_ratio],
                         "resolution": resolution,
-                        "points_cost": family["cost"],
+                        "points_cost": IMAGE_COSTS[family_id][resolution],
                     }
                 )
     return models
 
 
-def model_cost(model: str) -> int:
+def model_cost(model: str, resolution: str = "1K") -> int:
+    public = public_model_catalog_lookup().get(model)
+    if public:
+        return int(public["points_cost"])
+
     family_id = model_family_id(model)
     if family_id:
-        return MODEL_FAMILIES[family_id]["cost"]
+        return IMAGE_COSTS[family_id][normalize_resolution(resolution)]
     return 5
 
 
@@ -677,7 +689,7 @@ async def create_image_task(
     started = time.monotonic()
     created_at = now_iso()
     task_id = "task_" + secrets.token_urlsafe(12)
-    cost = model_cost(model)
+    cost = model_cost(model, resolution)
     attempted_errors: list[str] = []
 
     try:
@@ -700,7 +712,7 @@ async def create_image_task(
         if not image_url:
             raise RuntimeError("All model attempts failed: " + " | ".join(attempted_errors))
 
-        cost = model_cost(actual_model)
+        cost = model_cost(actual_model, resolution)
         duration = time.monotonic() - started
         task = {
             "task_id": task_id,
