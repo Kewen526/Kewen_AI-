@@ -27,6 +27,12 @@ Open:
 http://127.0.0.1:8088
 ```
 
+Health check:
+
+```bash
+curl http://127.0.0.1:8088/healthz
+```
+
 ## Environment
 
 ```bash

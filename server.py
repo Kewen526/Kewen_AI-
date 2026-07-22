@@ -19,6 +19,7 @@ import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -656,8 +657,26 @@ def generate_video_upload(
     raise HTTPException(status_code=501, detail="Video generation is not connected to Flow2API yet")
 
 
+@app.get("/healthz")
+def healthz() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.head("/healthz")
+def healthz_head() -> JSONResponse:
+    return JSONResponse(content=None, status_code=200)
+
+
 if DIST_DIR.exists():
     app.mount("/assets", StaticFiles(directory=DIST_DIR / "assets"), name="assets")
+
+
+@app.head("/{path:path}")
+def spa_head(path: str) -> FileResponse:
+    target = DIST_DIR / path
+    if path and target.is_file():
+        return FileResponse(target)
+    return FileResponse(DIST_DIR / "index.html")
 
 
 @app.get("/{path:path}")
