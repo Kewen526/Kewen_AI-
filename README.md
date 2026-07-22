@@ -2,6 +2,8 @@
 
 This package keeps the original Kewen AI static frontend and replaces the old backend with a small FastAPI adapter.
 
+The frontend is a static image-only studio. It loads its visible model list from `GET /v1/models`; no image model is hardcoded in the UI.
+
 The image generation endpoints call your Flow2API service:
 
 - `nano-banana-2` -> `gemini-3.1-flash-image-*`
@@ -9,7 +11,7 @@ The image generation endpoints call your Flow2API service:
 
 If the selected Nano Banana model returns a 5xx error from Flow2API, the adapter automatically retries the other Nano Banana model once. 4xx errors are returned immediately because they usually mean auth, payload, or validation problems.
 
-Video endpoints are intentionally not connected yet and return HTTP 501.
+Video generation is intentionally not exposed by this adapter.
 
 ## Run Locally
 
@@ -48,6 +50,7 @@ If these variables are not set, the adapter uses the values above by default.
 - `POST /auth/register`
 - `POST /auth/login`
 - `GET /auth/me`
+- `GET /v1/models`
 - `POST /v1/generate`
 - `POST /v1/generate/upload`
 - `GET /v1/tasks`

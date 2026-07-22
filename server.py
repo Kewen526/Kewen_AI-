@@ -37,6 +37,23 @@ IMAGE_COSTS = {
     "nano-banana-pro": 6,
 }
 
+MODEL_FAMILIES = {
+    "nano-banana-2": {
+        "name": "Nano Banana 2",
+        "short_name": "N2",
+        "description": "Fast image generation for product scenes and daily batch work.",
+        "tier": "balanced",
+        "cost": 5,
+    },
+    "nano-banana-pro": {
+        "name": "Nano Banana Pro",
+        "short_name": "NP",
+        "description": "Higher fidelity image generation for stricter detail and texture.",
+        "tier": "pro",
+        "cost": 6,
+    },
+}
+
 MODEL_PREFIX = {
     "nano-banana-2": "gemini-3.1-flash-image",
     "nano-banana-pro": "gemini-3.0-pro-image",
@@ -49,6 +66,16 @@ ASPECT_SUFFIX = {
     "4:3": "four-three",
     "3:4": "three-four",
 }
+
+ASPECT_LABELS = {
+    "1:1": "Square",
+    "16:9": "Landscape",
+    "9:16": "Portrait",
+    "4:3": "Four Thirds",
+    "3:4": "Three Fourths",
+}
+
+RESOLUTIONS = ["1K", "2K", "4K"]
 
 
 class Flow2APIError(RuntimeError):
@@ -96,7 +123,6 @@ def init_db() -> None:
                 prompt TEXT NOT NULL,
                 status TEXT NOT NULL,
                 result_image_url TEXT,
-                result_video_url TEXT,
                 error_msg TEXT,
                 points_cost INTEGER NOT NULL DEFAULT 0,
                 duration_seconds REAL,
@@ -188,11 +214,63 @@ def map_image_model(model: str, aspect_ratio: str, resolution: str) -> str:
     return suffix
 
 
+def image_model_catalog() -> list[dict[str, Any]]:
+    models: list[dict[str, Any]] = []
+    for family_id, prefix in MODEL_PREFIX.items():
+        family = MODEL_FAMILIES[family_id]
+        for aspect_ratio, aspect_suffix in ASPECT_SUFFIX.items():
+            for resolution in RESOLUTIONS:
+                suffix = "" if resolution == "1K" else f"-{resolution.lower()}"
+                model_id = f"{prefix}-{aspect_suffix}{suffix}"
+                models.append(
+                    {
+                        "id": model_id,
+                        "object": "model",
+                        "type": "image",
+                        "provider": "flow2api",
+                        "family_id": family_id,
+                        "family": family["name"],
+                        "short_name": family["short_name"],
+                        "name": f"{family['name']} {ASPECT_LABELS[aspect_ratio]} {resolution}",
+                        "description": family["description"],
+                        "tier": family["tier"],
+                        "aspect_ratio": aspect_ratio,
+                        "aspect_label": ASPECT_LABELS[aspect_ratio],
+                        "resolution": resolution,
+                        "points_cost": family["cost"],
+                    }
+                )
+    return models
+
+
+def model_cost(model: str) -> int:
+    if model in IMAGE_COSTS:
+        return IMAGE_COSTS[model]
+    if model.startswith(MODEL_PREFIX["nano-banana-pro"]):
+        return MODEL_FAMILIES["nano-banana-pro"]["cost"]
+    if model.startswith(MODEL_PREFIX["nano-banana-2"]):
+        return MODEL_FAMILIES["nano-banana-2"]["cost"]
+    return 5
+
+
+def equivalent_image_model(model: str) -> Optional[str]:
+    for source_family, source_prefix in MODEL_PREFIX.items():
+        if not model.startswith(source_prefix):
+            continue
+        remainder = model[len(source_prefix):]
+        target_family = "nano-banana-2" if source_family == "nano-banana-pro" else "nano-banana-pro"
+        return f"{MODEL_PREFIX[target_family]}{remainder}"
+    return None
+
+
 def model_attempt_order(model: str) -> list[str]:
     if model == "nano-banana-pro":
         return ["nano-banana-pro", "nano-banana-2"]
     if model == "nano-banana-2":
         return ["nano-banana-2", "nano-banana-pro"]
+    if model.startswith("gemini-"):
+        fallback = equivalent_image_model(model)
+        return [model, fallback] if fallback else [model]
     return [model]
 
 
@@ -337,7 +415,6 @@ def task_row_to_payload(row: sqlite3.Row) -> dict[str, Any]:
         "prompt_text": row["prompt"],
         "status": row["status"],
         "result_image_url": row["result_image_url"],
-        "result_video_url": row["result_video_url"],
         "error_msg": row["error_msg"],
         "points_cost": row["points_cost"],
         "cost": row["points_cost"] / 100,
@@ -353,9 +430,9 @@ def save_task(user_id: int, payload: dict[str, Any]) -> None:
             """
             INSERT INTO tasks (
                 task_id, user_id, task_type, model, flow_model, prompt, status,
-                result_image_url, result_video_url, error_msg, points_cost,
+                result_image_url, error_msg, points_cost,
                 duration_seconds, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 payload["task_id"],
@@ -366,7 +443,6 @@ def save_task(user_id: int, payload: dict[str, Any]) -> None:
                 payload["prompt"],
                 payload["status"],
                 payload.get("result_image_url"),
-                payload.get("result_video_url"),
                 payload.get("error_msg"),
                 payload.get("points_cost", 0),
                 payload.get("duration_seconds"),
@@ -407,16 +483,6 @@ class GenerateRequest(BaseModel):
     product_image_url: Optional[str] = None
     scene_image_url: Optional[str] = None
     image_urls: Optional[list[str]] = None
-
-
-class VideoRequest(BaseModel):
-    model: str
-    prompt: str
-    aspect_ratio: str = "16:9"
-    resolution: str = "1080p"
-    duration: int = 6
-    enhance_prompt: bool = True
-    mode_image: Optional[str] = None
 
 
 app = FastAPI(title="Kewen AI Flow2API Adapter")
@@ -485,6 +551,20 @@ def me(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     }
 
 
+@app.get("/v1/models")
+def list_models() -> dict[str, Any]:
+    models = image_model_catalog()
+    return {
+        "object": "list",
+        "type": "image",
+        "data": models,
+        "defaults": {
+            "model": models[0]["id"] if models else None,
+            "prompt": default_prompt(),
+        },
+    }
+
+
 @app.get("/v1/tasks")
 def list_tasks(
     limit: int = 50,
@@ -540,7 +620,7 @@ async def create_image_task(
     started = time.monotonic()
     created_at = now_iso()
     task_id = "task_" + secrets.token_urlsafe(12)
-    cost = IMAGE_COSTS.get(model, 5)
+    cost = model_cost(model)
     attempted_errors: list[str] = []
 
     try:
@@ -563,7 +643,7 @@ async def create_image_task(
         if not image_url:
             raise RuntimeError("All model attempts failed: " + " | ".join(attempted_errors))
 
-        cost = IMAGE_COSTS.get(actual_model, cost)
+        cost = model_cost(actual_model)
         duration = time.monotonic() - started
         task = {
             "task_id": task_id,
@@ -637,24 +717,6 @@ async def generate_image_upload(
         resolution=form.get("resolution", "1K"),
         image_parts=image_parts,
     )
-
-
-@app.post("/v1/generate/video")
-def generate_video(
-    body: VideoRequest,
-    user: dict[str, Any] = Depends(current_user),
-) -> dict[str, Any]:
-    del body, user
-    raise HTTPException(status_code=501, detail="Video generation is not connected to Flow2API yet")
-
-
-@app.post("/v1/generate/video/upload")
-def generate_video_upload(
-    request: Request,
-    user: dict[str, Any] = Depends(current_user),
-) -> dict[str, Any]:
-    del request, user
-    raise HTTPException(status_code=501, detail="Video generation is not connected to Flow2API yet")
 
 
 @app.get("/healthz")
