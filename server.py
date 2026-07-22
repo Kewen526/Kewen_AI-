@@ -37,6 +37,9 @@ IMAGE_COSTS = {
     "nano-banana-pro": 6,
 }
 
+API_KEY_PREFIX = "kwapi_"
+PUBLIC_MODEL_PREFIX = "kewen"
+
 MODEL_FAMILIES = {
     "nano-banana-2": {
         "name": "Nano Banana 2",
@@ -78,6 +81,10 @@ ASPECT_LABELS = {
 RESOLUTIONS = ["1K", "2K", "4K"]
 
 
+def new_api_key() -> str:
+    return API_KEY_PREFIX + secrets.token_urlsafe(32)
+
+
 class Flow2APIError(RuntimeError):
     def __init__(self, status_code: int, message: str):
         super().__init__(message)
@@ -98,11 +105,17 @@ def init_db() -> None:
                 email TEXT UNIQUE NOT NULL,
                 username TEXT NOT NULL,
                 password_hash TEXT NOT NULL,
+                api_key TEXT,
                 points INTEGER NOT NULL DEFAULT 1000,
                 created_at TEXT NOT NULL
             )
             """
         )
+        columns = {row[1] for row in con.execute("PRAGMA table_info(users)").fetchall()}
+        if "api_key" not in columns:
+            con.execute("ALTER TABLE users ADD COLUMN api_key TEXT")
+        for row in con.execute("SELECT id FROM users WHERE api_key IS NULL OR api_key = ''").fetchall():
+            con.execute("UPDATE users SET api_key = ? WHERE id = ?", (new_api_key(), row[0]))
         con.execute(
             """
             CREATE TABLE IF NOT EXISTS sessions (
@@ -162,6 +175,7 @@ def user_payload(row: sqlite3.Row) -> dict[str, Any]:
         "user_id": row["id"],
         "email": row["email"],
         "username": row["username"],
+        "api_key": row["api_key"],
         "points": row["points"],
         "balance": row["points"] / 100,
     }
@@ -182,56 +196,91 @@ def current_user(authorization: Optional[str] = Header(default=None)) -> dict[st
         raise HTTPException(status_code=401, detail="Missing bearer token")
     token = authorization.split(" ", 1)[1].strip()
     with db() as con:
-        row = con.execute(
-            """
-            SELECT users.*
-            FROM sessions
-            JOIN users ON users.id = sessions.user_id
-            WHERE sessions.token = ?
-            """,
-            (token,),
-        ).fetchone()
+        if token.startswith(API_KEY_PREFIX):
+            row = con.execute("SELECT * FROM users WHERE api_key = ?", (token,)).fetchone()
+        else:
+            row = con.execute(
+                """
+                SELECT users.*
+                FROM sessions
+                JOIN users ON users.id = sessions.user_id
+                WHERE sessions.token = ?
+                """,
+                (token,),
+            ).fetchone()
     if not row:
         raise HTTPException(status_code=401, detail="Invalid bearer token")
     return dict(row)
 
 
+def normalize_resolution(resolution: str) -> str:
+    value = (resolution or "1K").strip().upper()
+    return value if value in RESOLUTIONS else "1K"
+
+
+def public_aspect_token(aspect_ratio: str) -> str:
+    return (aspect_ratio or "1:1").replace(":", "x")
+
+
+def public_model_id(family_id: str, aspect_ratio: str, resolution: str) -> str:
+    return f"{PUBLIC_MODEL_PREFIX}-{family_id}-{public_aspect_token(aspect_ratio)}-{normalize_resolution(resolution).lower()}"
+
+
+def upstream_model_id(family_id: str, aspect_ratio: str, resolution: str) -> str:
+    prefix = MODEL_PREFIX[family_id]
+    aspect = ASPECT_SUFFIX.get(aspect_ratio or "1:1", "square")
+    suffix = "" if normalize_resolution(resolution) == "1K" else f"-{normalize_resolution(resolution).lower()}"
+    return f"{prefix}-{aspect}{suffix}"
+
+
+def public_model_catalog_lookup() -> dict[str, dict[str, Any]]:
+    return {model["id"]: model for model in image_model_catalog()}
+
+
+def model_family_id(model: str) -> Optional[str]:
+    if model in MODEL_FAMILIES:
+        return model
+    public = public_model_catalog_lookup().get(model)
+    if public:
+        return str(public["family_id"])
+    for family_id, prefix in MODEL_PREFIX.items():
+        if model.startswith(prefix):
+            return family_id
+    return None
+
+
 def map_image_model(model: str, aspect_ratio: str, resolution: str) -> str:
+    public = public_model_catalog_lookup().get(model)
+    if public:
+        return upstream_model_id(str(public["family_id"]), str(public["aspect_ratio"]), str(public["resolution"]))
+
     if model.startswith("gemini-"):
         return model
 
-    prefix = MODEL_PREFIX.get(model)
-    if not prefix:
+    family_id = model_family_id(model)
+    if not family_id:
         raise HTTPException(status_code=400, detail=f"Unsupported image model: {model}")
 
-    aspect = ASPECT_SUFFIX.get(aspect_ratio or "1:1", "square")
-    suffix = f"{prefix}-{aspect}"
-    res = (resolution or "1K").strip().lower()
-    if res == "2k":
-        suffix += "-2k"
-    elif res == "4k":
-        suffix += "-4k"
-    return suffix
+    return upstream_model_id(family_id, aspect_ratio, resolution)
 
 
 def image_model_catalog() -> list[dict[str, Any]]:
     models: list[dict[str, Any]] = []
-    for family_id, prefix in MODEL_PREFIX.items():
+    for family_id in MODEL_PREFIX:
         family = MODEL_FAMILIES[family_id]
-        for aspect_ratio, aspect_suffix in ASPECT_SUFFIX.items():
+        for aspect_ratio in ASPECT_SUFFIX:
             for resolution in RESOLUTIONS:
-                suffix = "" if resolution == "1K" else f"-{resolution.lower()}"
-                model_id = f"{prefix}-{aspect_suffix}{suffix}"
+                model_id = public_model_id(family_id, aspect_ratio, resolution)
                 models.append(
                     {
                         "id": model_id,
                         "object": "model",
                         "type": "image",
-                        "provider": "flow2api",
+                        "provider": "kewen-ai",
                         "family_id": family_id,
                         "family": family["name"],
                         "short_name": family["short_name"],
-                        "name": f"{family['name']} {ASPECT_LABELS[aspect_ratio]} {resolution}",
+                        "name": f"{family['name']} - {aspect_ratio} - {resolution}",
                         "description": family["description"],
                         "tier": family["tier"],
                         "aspect_ratio": aspect_ratio,
@@ -244,16 +293,22 @@ def image_model_catalog() -> list[dict[str, Any]]:
 
 
 def model_cost(model: str) -> int:
-    if model in IMAGE_COSTS:
-        return IMAGE_COSTS[model]
-    if model.startswith(MODEL_PREFIX["nano-banana-pro"]):
-        return MODEL_FAMILIES["nano-banana-pro"]["cost"]
-    if model.startswith(MODEL_PREFIX["nano-banana-2"]):
-        return MODEL_FAMILIES["nano-banana-2"]["cost"]
+    family_id = model_family_id(model)
+    if family_id:
+        return MODEL_FAMILIES[family_id]["cost"]
     return 5
 
 
 def equivalent_image_model(model: str) -> Optional[str]:
+    public = public_model_catalog_lookup().get(model)
+    if public:
+        source_family = str(public["family_id"])
+        target_family = "nano-banana-2" if source_family == "nano-banana-pro" else "nano-banana-pro"
+        return public_model_id(target_family, str(public["aspect_ratio"]), str(public["resolution"]))
+
+    if model in MODEL_FAMILIES:
+        return "nano-banana-2" if model == "nano-banana-pro" else "nano-banana-pro"
+
     for source_family, source_prefix in MODEL_PREFIX.items():
         if not model.startswith(source_prefix):
             continue
@@ -264,14 +319,8 @@ def equivalent_image_model(model: str) -> Optional[str]:
 
 
 def model_attempt_order(model: str) -> list[str]:
-    if model == "nano-banana-pro":
-        return ["nano-banana-pro", "nano-banana-2"]
-    if model == "nano-banana-2":
-        return ["nano-banana-2", "nano-banana-pro"]
-    if model.startswith("gemini-"):
-        fallback = equivalent_image_model(model)
-        return [model, fallback] if fallback else [model]
-    return [model]
+    fallback = equivalent_image_model(model)
+    return [model, fallback] if fallback and fallback != model else [model]
 
 
 def upload_to_image_part(filename: str, content: bytes, content_type: Optional[str]) -> dict[str, Any]:
@@ -410,7 +459,6 @@ def task_row_to_payload(row: sqlite3.Row) -> dict[str, Any]:
         "task_id": row["task_id"],
         "task_type": row["task_type"],
         "model": row["model"],
-        "flow_model": row["flow_model"],
         "prompt": row["prompt"],
         "prompt_text": row["prompt"],
         "status": row["status"],
@@ -510,10 +558,10 @@ def register(body: AuthRequest) -> dict[str, Any]:
         with db() as con:
             cur = con.execute(
                 """
-                INSERT INTO users(email, username, password_hash, points, created_at)
-                VALUES (?, ?, ?, 1000, ?)
+                INSERT INTO users(email, username, password_hash, api_key, points, created_at)
+                VALUES (?, ?, ?, ?, 1000, ?)
                 """,
-                (email, username, password_hash(body.password), now_iso()),
+                (email, username, password_hash(body.password), new_api_key(), now_iso()),
             )
             user_id = cur.lastrowid
             row = con.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
@@ -546,9 +594,18 @@ def me(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         "id": user["id"],
         "email": user["email"],
         "username": user["username"],
+        "api_key": user["api_key"],
         "points": user["points"],
         "balance": user["points"] / 100,
     }
+
+
+@app.post("/auth/api-key")
+def rotate_api_key(user: dict[str, Any] = Depends(current_user)) -> dict[str, str]:
+    api_key = new_api_key()
+    with db() as con:
+        con.execute("UPDATE users SET api_key = ? WHERE id = ?", (api_key, user["id"]))
+    return {"api_key": api_key}
 
 
 @app.get("/v1/models")

@@ -84,6 +84,26 @@ const toast = (message) => {
   }, 3200);
 };
 
+const copyText = async (value, message = "已复制") => {
+  try {
+    await navigator.clipboard.writeText(value);
+    toast(message);
+  } catch {
+    toast("复制失败，请手动复制");
+  }
+};
+
+const rotateApiKey = async () => {
+  try {
+    const payload = await api("/auth/api-key", { method: "POST" });
+    state.user = { ...state.user, api_key: payload.api_key };
+    render();
+    toast("API Key 已重置");
+  } catch (error) {
+    toast(error.message);
+  }
+};
+
 const loadModels = async () => {
   const payload = await api("/v1/models");
   state.models = payload.data || [];
@@ -491,15 +511,27 @@ const renderStudio = () => `
   </main>
 `;
 
+const renderApiModelRow = (model) => `
+  <tr>
+    <td><code>${escapeHtml(model.id)}</code></td>
+    <td>${escapeHtml(model.family)}</td>
+    <td>${escapeHtml(model.aspect_ratio)}</td>
+    <td>${escapeHtml(model.resolution)}</td>
+    <td>${Number(model.points_cost || 0)} 分</td>
+  </tr>
+`;
+
 const renderApiDocs = () => {
   const base = apiBaseUrl();
+  const apiKey = state.user?.api_key || "";
+  const exampleModel = state.models[0]?.id || "kewen-nano-banana-2-4x3-1k";
   return `
     <main class="api-page">
       <section class="api-hero">
         <div>
           <span class="eyebrow">Open API</span>
           <h1>把图片生成接入你的业务系统</h1>
-          <p>API 与网页端使用同一套后端模型。先读取 <code>/v1/models</code>，再把返回的模型 ID 用于生成请求。</p>
+          <p>API 与网页端使用同一套后端模型。这里展示的是 Kewen AI 公开模型 ID，真实上游模型由服务端自动映射。</p>
         </div>
         <div class="api-base">
           <span>Base URL</span>
@@ -508,23 +540,46 @@ const renderApiDocs = () => {
       </section>
 
       <section class="api-grid">
-        <article class="api-card">
-          <h2>1. 登录获取 Token</h2>
-          <pre><code>curl -X POST ${escapeHtml(base)}/auth/login \\
-  -H "Content-Type: application/json" \\
-  -d '{"email":"user@example.com","password":"123456"}'</code></pre>
+        <article class="api-card api-key-card">
+          <div class="api-card-title">
+            <h2>1. 你的 API Key</h2>
+            <button class="ghost-btn" data-copy-value="${escapeHtml(apiKey)}">复制</button>
+          </div>
+          <div class="key-box">${escapeHtml(apiKey || "登录后自动生成")}</div>
+          <p>外部系统调用接口时，把这个 Key 放到 <code>Authorization: Bearer</code> 里。</p>
+          <button class="danger-btn" data-rotate-api-key>重置 API Key</button>
         </article>
         <article class="api-card">
           <h2>2. 获取模型列表</h2>
-          <pre><code>curl ${escapeHtml(base)}/v1/models</code></pre>
+          <pre><code>curl ${escapeHtml(base)}/v1/models \\
+  -H "Authorization: Bearer YOUR_API_KEY"</code></pre>
         </article>
         <article class="api-card wide">
-          <h2>3. 上传多张参考图并生成</h2>
+          <h2>3. 可用模型</h2>
+          <div class="model-table-wrap">
+            <table class="model-table">
+              <thead>
+                <tr>
+                  <th>模型 ID</th>
+                  <th>模型</th>
+                  <th>尺寸</th>
+                  <th>清晰度</th>
+                  <th>积分</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${state.models.map(renderApiModelRow).join("")}
+              </tbody>
+            </table>
+          </div>
+        </article>
+        <article class="api-card wide">
+          <h2>4. 上传多张参考图并生成</h2>
           <pre><code>curl -X POST ${escapeHtml(base)}/v1/generate/upload \\
-  -H "Authorization: Bearer YOUR_TOKEN" \\
-  -F "model=MODEL_ID_FROM_/v1/models" \\
+  -H "Authorization: Bearer YOUR_API_KEY" \\
+  -F "model=${escapeHtml(exampleModel)}" \\
   -F "aspect_ratio=4:3" \\
-  -F "resolution=2K" \\
+  -F "resolution=1K" \\
   -F "prompt=按参考图生成真实商品实拍图" \\
   -F "product_images=@scene.png" \\
   -F "product_images=@product.png"</code></pre>
@@ -568,6 +623,12 @@ const wireEvents = () => {
       render();
     });
   });
+
+  document.querySelectorAll("[data-copy-value]").forEach((button) => {
+    button.addEventListener("click", () => copyText(button.dataset.copyValue || "", "API Key 已复制"));
+  });
+
+  document.querySelector("[data-rotate-api-key]")?.addEventListener("click", rotateApiKey);
 
   document.querySelectorAll("[data-family-id]").forEach((button) => {
     button.addEventListener("click", () => {
