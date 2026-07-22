@@ -1,5 +1,6 @@
 const app = document.getElementById("app");
 const tokenKey = "kewen_token";
+const previewUrls = new WeakMap();
 
 const state = {
   token: localStorage.getItem(tokenKey),
@@ -26,7 +27,7 @@ const copy = {
   enter: "进入工作台",
   createAccount: "创建账号",
   logout: "退出",
-  studio: "创作台",
+  studio: "创作",
   api: "API 接入",
   points: "积分",
   generate: "开始生成",
@@ -67,7 +68,7 @@ const escapeHtml = (value) =>
 const uniq = (items) => [...new Set(items.filter(Boolean))];
 
 const apiBaseUrl = () => {
-  if (location.hostname === "kewenai.shop" || location.hostname === "www.kewenai.shop") {
+  if (["kewenai.shop", "www.kewenai.shop"].includes(location.hostname)) {
     return "https://api.kewenai.shop";
   }
   return location.origin;
@@ -106,6 +107,11 @@ const loadTasks = async () => {
   state.tasks = await api("/v1/tasks?limit=24");
 };
 
+const familyDescription = (familyId) =>
+  familyId === "nano-banana-pro"
+    ? "细节更稳，适合质感、纹理、商品卖点要求更高的图。"
+    : "速度快，适合日常商品图、批量任务和快速出图。";
+
 const familyOptions = () => {
   const families = new Map();
   state.models.forEach((model) => {
@@ -116,9 +122,7 @@ const familyOptions = () => {
         shortName: model.short_name,
         cost: model.points_cost,
         tier: model.tier,
-        description: model.family_id === "nano-banana-pro"
-          ? "更适合细节、质感和高要求商品图。"
-          : "适合日常商品图、批量任务和快速出图。",
+        description: familyDescription(model.family_id),
       });
     }
   });
@@ -231,9 +235,45 @@ const generate = async () => {
 };
 
 const latestSuccessfulTask = () => state.tasks.find((task) => task.status === "success" && task.result_image_url);
-const successfulTasks = () => state.tasks.filter((task) => task.status === "success" && task.result_image_url).slice(0, 6);
+const successfulTasks = () => state.tasks.filter((task) => task.status === "success" && task.result_image_url).slice(0, 8);
 const pendingCount = () => state.tasks.filter((task) => ["pending", "processing"].includes(task.status)).length;
 const failedCount = () => state.tasks.filter((task) => task.status === "failed").length;
+const currentCost = () => Number(selectedModel()?.points_cost || 0);
+
+const fileKey = (file) => `${file.name}-${file.size}-${file.lastModified}`;
+
+const appendFiles = (files) => {
+  const existing = new Set(state.files.map(fileKey));
+  [...files].forEach((file) => {
+    if (!existing.has(fileKey(file))) {
+      state.files.push(file);
+      existing.add(fileKey(file));
+    }
+  });
+};
+
+const previewUrl = (file) => {
+  if (!previewUrls.has(file)) previewUrls.set(file, URL.createObjectURL(file));
+  return previewUrls.get(file);
+};
+
+const removeFileAt = (index) => {
+  const [file] = state.files.splice(index, 1);
+  const url = file ? previewUrls.get(file) : null;
+  if (url) URL.revokeObjectURL(url);
+  render();
+};
+
+const renderFilePreview = (file, index) => `
+  <article class="file-preview">
+    <img src="${escapeHtml(previewUrl(file))}" alt="${escapeHtml(file.name)}" />
+    <div>
+      <strong>${escapeHtml(file.name)}</strong>
+      <span>${(file.size / 1024).toFixed(1)}KB</span>
+    </div>
+    <button type="button" aria-label="移除 ${escapeHtml(file.name)}" data-remove-file="${index}">×</button>
+  </article>
+`;
 
 const renderAuth = () => `
   <main class="auth-view">
@@ -276,14 +316,15 @@ const renderFamilyCard = (family) => `
       <strong>${escapeHtml(family.name)}</strong>
       <small>${escapeHtml(family.description)}</small>
     </span>
-    <span class="cost">${family.cost} 积分</span>
+    <span class="cost">${family.cost} 分</span>
   </button>
 `;
 
-const renderSelector = (title, values, selected, attr) => `
-  <section class="control-section">
-    <div class="section-head">
+const renderSelector = (title, helper, values, selected, attr) => `
+  <section class="field-group">
+    <div class="group-title">
       <strong>${title}</strong>
+      <span>${helper}</span>
     </div>
     <div class="chips">
       ${values.map((value) => `<button class="chip ${value === selected ? "active" : ""}" data-${attr}="${value}">${escapeHtml(value)}</button>`).join("")}
@@ -299,7 +340,7 @@ const renderTask = (task) => {
       ${task.result_image_url ? `<img class="task-thumb" src="${escapeHtml(task.result_image_url)}" alt="生成结果" />` : `<div class="task-thumb blank"></div>`}
       <div class="task-body">
         <div class="task-prompt">${escapeHtml(task.prompt_text || task.prompt || "未记录提示词")}</div>
-        <div class="task-meta">${escapeHtml(String(task.created_at || "").slice(0, 16).replace("T", " "))} · ${Number(task.points_cost || 0)} 积分</div>
+        <div class="task-meta">${escapeHtml(String(task.created_at || "").slice(0, 16).replace("T", " "))} · ${Number(task.points_cost || 0)} 分</div>
         ${task.error_msg ? `<div class="task-error">${escapeHtml(task.error_msg)}</div>` : ""}
       </div>
       <span class="status ${statusClass}">${statusText}</span>
@@ -307,120 +348,148 @@ const renderTask = (task) => {
   `;
 };
 
-const renderGallery = () => {
+const renderResultPanel = () => {
   const latest = latestSuccessfulTask();
   const results = successfulTasks();
   if (!latest) {
     return `
-      <section class="empty-results">
+      <section class="result-panel empty">
         <div class="empty-visual"></div>
-        <strong>还没有生成结果</strong>
-        <span>选择模型、比例和清晰度，输入提示词后开始生成。生成完成后结果会出现在这里。</span>
+        <strong>结果会显示在这里</strong>
+        <span>上传参考图、填写提示词后点击生成。完成后可以直接打开原图，历史结果会保留在右侧任务里。</span>
       </section>
     `;
   }
   return `
-    <section class="result-layout">
-      <article class="latest-result">
-        <div class="result-toolbar">
-          <span>最新结果</span>
-          <a href="${escapeHtml(latest.result_image_url)}" target="_blank" rel="noreferrer">打开原图</a>
+    <section class="result-panel">
+      <div class="result-toolbar">
+        <div>
+          <strong>最新结果</strong>
+          <span>${escapeHtml(String(latest.created_at || "").slice(0, 16).replace("T", " "))}</span>
         </div>
-        <img src="${escapeHtml(latest.result_image_url)}" alt="最新生成结果" />
-      </article>
-      <div class="result-grid">
-        ${results.map((task) => `
-          <a class="result-tile" href="${escapeHtml(task.result_image_url)}" target="_blank" rel="noreferrer">
-            <img src="${escapeHtml(task.result_image_url)}" alt="历史生成结果" />
-          </a>
-        `).join("")}
+        <a href="${escapeHtml(latest.result_image_url)}" target="_blank" rel="noreferrer">打开原图</a>
       </div>
+      <div class="result-stage">
+        <img src="${escapeHtml(latest.result_image_url)}" alt="最新生成结果" />
+      </div>
+      ${results.length > 1 ? `
+        <div class="result-strip">
+          ${results.slice(1).map((task) => `
+            <a class="result-tile" href="${escapeHtml(task.result_image_url)}" target="_blank" rel="noreferrer">
+              <img src="${escapeHtml(task.result_image_url)}" alt="历史生成结果" />
+            </a>
+          `).join("")}
+        </div>
+      ` : ""}
     </section>
   `;
 };
 
-const renderStudio = () => {
+const renderCreatePanel = () => {
   const model = selectedModel();
   const families = familyOptions();
   return `
-    <main class="studio-shell">
-      <section class="studio-header">
+    <aside class="create-panel">
+      <div class="panel-head">
         <div>
-          <div class="eyebrow">PRODUCT IMAGE WORKSPACE</div>
+          <span class="eyebrow">Image Generation</span>
           <h1>生成商品实拍图</h1>
-          <p>选择模型系列、图片比例和清晰度。具体模型由后端能力目录匹配，失败时自动切换同规格备用模型。</p>
         </div>
-        <div class="metric-row">
-          <div class="metric"><strong>${families.length}</strong><span>模型系列</span></div>
-          <div class="metric"><strong>${pendingCount()}</strong><span>进行中</span></div>
-          <div class="metric"><strong>${failedCount()}</strong><span>失败任务</span></div>
+        <span class="balance">${Number(state.user?.points || 0).toLocaleString("zh-CN")} 分</span>
+      </div>
+
+      <section class="field-group">
+        <div class="group-title">
+          <strong>模型</strong>
+          <span>由后端动态提供</span>
+        </div>
+        <div class="model-list">
+          ${families.map(renderFamilyCard).join("") || `<div class="muted">${copy.noModel}</div>`}
         </div>
       </section>
 
-      <section class="studio-grid">
-        <aside class="control-panel">
-          <section class="control-section">
-            <div class="section-head">
-              <strong>模型</strong>
-              <span>后端动态提供</span>
-            </div>
-            <div class="model-list">
-              ${families.map(renderFamilyCard).join("") || `<div class="muted">${copy.noModel}</div>`}
-            </div>
-          </section>
+      <div class="split-controls">
+        ${renderSelector("尺寸", "图片比例", aspectOptions(), state.selectedAspect, "aspect")}
+        ${renderSelector("清晰度", "输出清晰度", resolutionOptions(), state.selectedResolution, "resolution")}
+      </div>
 
-          ${renderSelector("尺寸", aspectOptions(), state.selectedAspect, "aspect")}
-          ${renderSelector("清晰度", resolutionOptions(), state.selectedResolution, "resolution")}
-
-          <section class="control-section">
-            <div class="section-head">
-              <strong>参考图</strong>
-              <span>${state.files.length ? `${state.files.length} 张` : "可选"}</span>
-            </div>
-            <button class="upload-box" id="pick-files" type="button">
-              <span>选择图片</span>
-              <small>支持多张参考图</small>
-            </button>
-            <input id="file-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden />
-            ${state.files.length ? `<div class="file-list">${state.files.map((file) => `<span>${escapeHtml(file.name)}</span>`).join("")}</div>` : ""}
-          </section>
-
-          <div class="config-card">
-            <span>当前配置</span>
-            <strong>${model ? `${escapeHtml(model.family)} · ${escapeHtml(model.aspect_ratio)} · ${escapeHtml(model.resolution)}` : copy.noModel}</strong>
-            <small>${model ? `${model.points_cost} 积分 / 次` : ""}</small>
-          </div>
-        </aside>
-
-        <section class="compose-panel">
-          <div class="prompt-card">
-            <div class="section-head">
-              <strong>提示词</strong>
-              <span id="prompt-count">${state.prompt.length}/900</span>
-            </div>
-            <textarea id="prompt-input" maxlength="900" placeholder="描述你想生成的商品实拍图，例如：把商品放在真实货架上，保持自然光线和普通手机拍摄质感。">${escapeHtml(state.prompt)}</textarea>
-            <div class="prompt-actions">
-              <span>生成结果会自动保存到最近任务。</span>
-              <button class="primary-btn" id="generate-btn" ${state.generating ? "disabled" : ""}>${state.generating ? copy.generating : copy.generate}</button>
-            </div>
-          </div>
-
-          ${renderGallery()}
-        </section>
-
-        <aside class="activity-panel">
-          <div class="section-head">
-            <strong>最近任务</strong>
-            <span>${state.tasks.length} 条</span>
-          </div>
-          <div class="task-list">
-            ${state.tasks.length ? state.tasks.map(renderTask).join("") : `<div class="muted">${copy.noTasks}</div>`}
-          </div>
-        </aside>
+      <section class="field-group">
+        <div class="group-title">
+          <strong>参考图</strong>
+          <span>${state.files.length ? `${state.files.length} 张` : "可选"}</span>
+        </div>
+        <button class="upload-box" id="pick-files" type="button">
+          <strong>选择图片</strong>
+          <span>支持多张，重复选择会继续追加</span>
+        </button>
+        <input id="file-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden />
+        ${state.files.length ? `<div class="file-list">${state.files.map(renderFilePreview).join("")}</div>` : ""}
       </section>
-    </main>
+
+      <section class="field-group prompt-group">
+        <div class="group-title">
+          <strong>提示词</strong>
+          <span id="prompt-count">${state.prompt.length}/900</span>
+        </div>
+        <textarea id="prompt-input" maxlength="900" placeholder="描述你想生成的商品实拍图，例如：把商品放在真实货架上，保持自然光线和普通手机拍摄质感。">${escapeHtml(state.prompt)}</textarea>
+      </section>
+
+      <div class="generate-bar">
+        <div>
+          <span>当前配置</span>
+          <strong>${model ? `${escapeHtml(model.family)} · ${escapeHtml(model.aspect_ratio)} · ${escapeHtml(model.resolution)}` : copy.noModel}</strong>
+          <small>${currentCost()} 分 / 次</small>
+        </div>
+        <button class="primary-btn" id="generate-btn" ${state.generating ? "disabled" : ""}>${state.generating ? copy.generating : copy.generate}</button>
+      </div>
+    </aside>
   `;
 };
+
+const renderSidePanel = () => `
+  <aside class="side-panel">
+    <section class="quick-card">
+      <div class="quick-metric">
+        <span>可用模型</span>
+        <strong>${familyOptions().length}</strong>
+      </div>
+      <div class="quick-metric">
+        <span>进行中</span>
+        <strong>${pendingCount()}</strong>
+      </div>
+      <div class="quick-metric">
+        <span>失败</span>
+        <strong>${failedCount()}</strong>
+      </div>
+    </section>
+
+    <section class="api-shortcut">
+      <div>
+        <strong>需要接入业务系统？</strong>
+        <span>查看模型列表、上传多张参考图、返回图片 URL。</span>
+      </div>
+      <button class="ghost-btn" data-view="api">查看 API</button>
+    </section>
+
+    <section class="task-panel">
+      <div class="group-title">
+        <strong>最近任务</strong>
+        <span>${state.tasks.length} 条</span>
+      </div>
+      <div class="task-list">
+        ${state.tasks.length ? state.tasks.map(renderTask).join("") : `<div class="muted">${copy.noTasks}</div>`}
+      </div>
+    </section>
+  </aside>
+`;
+
+const renderStudio = () => `
+  <main class="studio-shell">
+    ${renderCreatePanel()}
+    ${renderResultPanel()}
+    ${renderSidePanel()}
+  </main>
+`;
 
 const renderApiDocs = () => {
   const base = apiBaseUrl();
@@ -428,9 +497,9 @@ const renderApiDocs = () => {
     <main class="api-page">
       <section class="api-hero">
         <div>
-          <div class="eyebrow">OPEN API</div>
-          <h1>把图片生成接入业务系统</h1>
-          <p>API 与网页使用同一套能力目录。先读取 <code>/v1/models</code>，再把返回的模型 ID 用于生成请求。</p>
+          <span class="eyebrow">Open API</span>
+          <h1>把图片生成接入你的业务系统</h1>
+          <p>API 与网页端使用同一套后端模型。先读取 <code>/v1/models</code>，再把返回的模型 ID 用于生成请求。</p>
         </div>
         <div class="api-base">
           <span>Base URL</span>
@@ -440,29 +509,17 @@ const renderApiDocs = () => {
 
       <section class="api-grid">
         <article class="api-card">
-          <h2>登录</h2>
+          <h2>1. 登录获取 Token</h2>
           <pre><code>curl -X POST ${escapeHtml(base)}/auth/login \\
   -H "Content-Type: application/json" \\
   -d '{"email":"user@example.com","password":"123456"}'</code></pre>
         </article>
         <article class="api-card">
-          <h2>模型目录</h2>
+          <h2>2. 获取模型列表</h2>
           <pre><code>curl ${escapeHtml(base)}/v1/models</code></pre>
         </article>
         <article class="api-card wide">
-          <h2>文本生成图片</h2>
-          <pre><code>curl -X POST ${escapeHtml(base)}/v1/generate \\
-  -H "Authorization: Bearer YOUR_TOKEN" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "model": "MODEL_ID_FROM_/v1/models",
-    "aspect_ratio": "4:3",
-    "resolution": "2K",
-    "prompt": "生成一张真实自然的商品货架实拍图"
-  }'</code></pre>
-        </article>
-        <article class="api-card wide">
-          <h2>上传多张参考图</h2>
+          <h2>3. 上传多张参考图并生成</h2>
           <pre><code>curl -X POST ${escapeHtml(base)}/v1/generate/upload \\
   -H "Authorization: Bearer YOUR_TOKEN" \\
   -F "model=MODEL_ID_FROM_/v1/models" \\
@@ -547,8 +604,12 @@ const wireEvents = () => {
     document.getElementById("file-input")?.click();
   });
   document.getElementById("file-input")?.addEventListener("change", (event) => {
-    state.files = [...event.target.files];
+    appendFiles(event.target.files);
+    event.target.value = "";
     render();
+  });
+  document.querySelectorAll("[data-remove-file]").forEach((button) => {
+    button.addEventListener("click", () => removeFileAt(Number(button.dataset.removeFile)));
   });
   document.getElementById("generate-btn")?.addEventListener("click", generate);
 };
