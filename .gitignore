@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+.venv/
+kewen_ai.db
+app.log
+*.log
+dist.zip
