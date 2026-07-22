@@ -35,6 +35,16 @@ Health check:
 curl http://127.0.0.1:8088/healthz
 ```
 
+## Domain Deployment
+
+Point these DNS A records to the server IP:
+
+- `kewenai.shop`
+- `www.kewenai.shop`
+- `api.kewenai.shop`
+
+Reverse proxy all three hosts to the adapter on `127.0.0.1:8088`. The web app and API use the same origin, so API examples on the page are generated from the current domain.
+
 ## Environment
 
 ```bash
