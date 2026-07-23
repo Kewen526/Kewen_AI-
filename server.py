@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
@@ -29,6 +30,9 @@ DIST_DIR = ROOT / "dist"
 GENERATED_DIR = ROOT / "generated"
 DB_PATH = ROOT / "kewen_ai.db"
 GENERATED_DIR.mkdir(parents=True, exist_ok=True)
+GENERATED_RETENTION_DAYS = int(os.getenv("GENERATED_RETENTION_DAYS", "7"))
+GENERATED_RETENTION_SECONDS = GENERATED_RETENTION_DAYS * 24 * 60 * 60
+GENERATED_CLEANUP_INTERVAL_SECONDS = int(os.getenv("GENERATED_CLEANUP_INTERVAL_SECONDS", "21600"))
 
 FLOW2API_URL = os.getenv("FLOW2API_URL", "http://43.155.157.57:38000/v1/chat/completions")
 FLOW2API_KEY = os.getenv("FLOW2API_KEY", "han1234")
@@ -498,7 +502,54 @@ async def cache_generated_image(task_id: str, image_url: str) -> str:
         return value
 
 
+def generated_image_path(image_url: Optional[str]) -> Optional[Path]:
+    value = (image_url or "").strip()
+    if not value.startswith("/generated/"):
+        return None
+    filename = Path(value).name
+    if not filename or filename != value.rsplit("/", 1)[-1]:
+        return None
+    return GENERATED_DIR / filename
+
+
+def visible_generated_image_url(image_url: Optional[str]) -> Optional[str]:
+    path = generated_image_path(image_url)
+    if path and not path.is_file():
+        return None
+    return image_url
+
+
+def generated_image_expires_at(image_url: Optional[str]) -> Optional[str]:
+    path = generated_image_path(image_url)
+    if not path or not path.is_file():
+        return None
+    expires_at = path.stat().st_mtime + GENERATED_RETENTION_SECONDS
+    return datetime.fromtimestamp(expires_at, timezone.utc).replace(microsecond=0).isoformat()
+
+
+def cleanup_generated_images() -> int:
+    cutoff = time.time() - GENERATED_RETENTION_SECONDS
+    deleted = 0
+    for path in GENERATED_DIR.iterdir():
+        if not path.is_file():
+            continue
+        try:
+            if path.stat().st_mtime < cutoff:
+                path.unlink()
+                deleted += 1
+        except OSError:
+            continue
+    return deleted
+
+
+async def generated_image_cleanup_loop() -> None:
+    while True:
+        await asyncio.sleep(GENERATED_CLEANUP_INTERVAL_SECONDS)
+        cleanup_generated_images()
+
+
 def task_row_to_payload(row: sqlite3.Row) -> dict[str, Any]:
+    result_image_url = visible_generated_image_url(row["result_image_url"])
     return {
         "task_id": row["task_id"],
         "task_type": row["task_type"],
@@ -506,7 +557,9 @@ def task_row_to_payload(row: sqlite3.Row) -> dict[str, Any]:
         "prompt": row["prompt"],
         "prompt_text": row["prompt"],
         "status": row["status"],
-        "result_image_url": row["result_image_url"],
+        "result_image_url": result_image_url,
+        "result_image_expires_at": generated_image_expires_at(result_image_url),
+        "image_retention_days": GENERATED_RETENTION_DAYS,
         "error_msg": row["error_msg"],
         "points_cost": row["points_cost"],
         "cost": row["points_cost"] / 100,
@@ -588,8 +641,10 @@ app.add_middleware(
 
 
 @app.on_event("startup")
-def startup() -> None:
+async def startup() -> None:
     init_db()
+    cleanup_generated_images()
+    asyncio.create_task(generated_image_cleanup_loop())
 
 
 @app.post("/auth/register")
@@ -658,6 +713,7 @@ def list_models() -> dict[str, Any]:
     return {
         "object": "list",
         "type": "image",
+        "image_retention_days": GENERATED_RETENTION_DAYS,
         "data": models,
         "defaults": {
             "model": models[0]["id"] if models else None,
@@ -755,6 +811,8 @@ async def create_image_task(
             "prompt": prompt,
             "status": "success",
             "result_image_url": image_url,
+            "result_image_expires_at": generated_image_expires_at(image_url),
+            "image_retention_days": GENERATED_RETENTION_DAYS,
             "points_cost": cost,
             "duration_seconds": duration,
             "created_at": created_at,

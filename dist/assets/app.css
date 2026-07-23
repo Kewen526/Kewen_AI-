@@ -721,10 +721,17 @@ a {
 }
 
 .task-meta,
+.task-retention,
 .task-error {
   margin-top: 4px;
   color: var(--subtle);
   font-size: 11px;
+}
+
+.task-retention {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .task-error {

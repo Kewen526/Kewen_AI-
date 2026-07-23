@@ -13,6 +13,7 @@ const state = {
   selectedResolution: "",
   files: [],
   tasks: [],
+  imageRetentionDays: 7,
   selectedTaskId: "",
   generating: false,
   prompt: "",
@@ -108,6 +109,7 @@ const rotateApiKey = async () => {
 const loadModels = async () => {
   const payload = await api("/v1/models");
   state.models = payload.data || [];
+  state.imageRetentionDays = payload.image_retention_days || 7;
   hydrateModelSelection();
 };
 
@@ -259,6 +261,15 @@ const generate = async () => {
 
 const latestSuccessfulTask = () => state.tasks.find((task) => task.status === "success" && task.result_image_url);
 const successfulTasks = () => state.tasks.filter((task) => task.status === "success" && task.result_image_url).slice(0, 8);
+
+const formatDateTime = (value) => String(value || "").slice(0, 16).replace("T", " ");
+
+const imageRetentionText = (task) => {
+  if (task?.result_image_expires_at) {
+    return `图片保留至 ${formatDateTime(task.result_image_expires_at)}`;
+  }
+  return `图片保留 ${task?.image_retention_days || state.imageRetentionDays || 7} 天`;
+};
 const selectedTask = () => state.tasks.find((task) => task.task_id === state.selectedTaskId);
 const pendingCount = () => state.tasks.filter((task) => ["pending", "processing"].includes(task.status)).length;
 const failedCount = () => state.tasks.filter((task) => task.status === "failed").length;
@@ -365,7 +376,8 @@ const renderTask = (task) => {
       ${task.result_image_url ? `<img class="task-thumb" src="${escapeHtml(task.result_image_url)}" alt="生成结果" />` : `<div class="task-thumb blank"></div>`}
       <div class="task-body">
         <div class="task-prompt">${escapeHtml(task.prompt_text || task.prompt || "未记录提示词")}</div>
-        <div class="task-meta">${escapeHtml(String(task.created_at || "").slice(0, 16).replace("T", " "))} · ${Number(task.points_cost || 0)} 分</div>
+        <div class="task-meta">${escapeHtml(formatDateTime(task.created_at))} · ${Number(task.points_cost || 0)} 分</div>
+        ${task.result_image_url ? `<div class="task-retention">${escapeHtml(imageRetentionText(task))}</div>` : ""}
         ${task.error_msg ? `<div class="task-error">${escapeHtml(task.error_msg)}</div>` : ""}
       </div>
       <span class="status ${statusClass}">${statusText}</span>
@@ -389,7 +401,8 @@ const renderResultPanel = () => {
       <div class="result-toolbar">
         <div>
           <strong>最新结果</strong>
-          <span>${escapeHtml(String(latest.created_at || "").slice(0, 16).replace("T", " "))}</span>
+          <span>${escapeHtml(formatDateTime(latest.created_at))}</span>
+          <span>${escapeHtml(imageRetentionText(latest))}</span>
         </div>
         <a href="${escapeHtml(latest.result_image_url)}" target="_blank" rel="noreferrer">打开原图</a>
       </div>
@@ -502,7 +515,7 @@ const renderApiDocs = () => {
         <div>
           <span class="eyebrow">Open API</span>
           <h1>把图片生成接入你的业务系统</h1>
-          <p>API 与网页端使用同一套后端模型。这里展示的是 Kewen AI 公开模型 ID，真实上游模型由服务端自动映射。</p>
+          <p>API 与网页端使用同一套后端模型。这里展示的是 Kewen AI 公开模型 ID，真实上游模型由服务端自动映射。生成图片文件默认保留 ${state.imageRetentionDays || 7} 天。</p>
         </div>
         <div class="api-base">
           <span>Base URL</span>
@@ -570,7 +583,8 @@ const renderTaskModal = () => {
         <div class="task-dialog-head">
           <div>
             <strong>任务详情</strong>
-            <span>${escapeHtml(String(task.created_at || "").slice(0, 16).replace("T", " "))} · ${Number(task.points_cost || 0)} 分</span>
+            <span>${escapeHtml(formatDateTime(task.created_at))} · ${Number(task.points_cost || 0)} 分</span>
+            ${task.result_image_url ? `<span>${escapeHtml(imageRetentionText(task))}</span>` : ""}
           </div>
           <button class="ghost-btn" type="button" data-close-task-modal>关闭</button>
         </div>
