@@ -108,7 +108,6 @@ const rotateApiKey = async () => {
 const loadModels = async () => {
   const payload = await api("/v1/models");
   state.models = payload.data || [];
-  if (!state.prompt) state.prompt = payload.defaults?.prompt || "";
   hydrateModelSelection();
 };
 

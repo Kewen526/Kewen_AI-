@@ -26,7 +26,9 @@ from pydantic import BaseModel
 
 ROOT = Path(__file__).resolve().parent
 DIST_DIR = ROOT / "dist"
+GENERATED_DIR = ROOT / "generated"
 DB_PATH = ROOT / "kewen_ai.db"
+GENERATED_DIR.mkdir(parents=True, exist_ok=True)
 
 FLOW2API_URL = os.getenv("FLOW2API_URL", "http://43.155.157.57:38000/v1/chat/completions")
 FLOW2API_KEY = os.getenv("FLOW2API_KEY", "han1234")
@@ -389,7 +391,18 @@ def image_url_part(url: str) -> dict[str, Any]:
 
 
 def default_prompt() -> str:
-    return "根据参考图生成真实自然的商品实拍图，保留商品主体特征，去除电商拍摄效果。"
+    return ""
+
+
+def extension_from_content_type(content_type: str) -> str:
+    value = (content_type or "").split(";", 1)[0].strip().lower()
+    return {
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+        "image/gif": ".gif",
+    }.get(value, ".png")
 
 
 def extract_flow_image_url(payload: dict[str, Any]) -> str:
@@ -464,6 +477,25 @@ async def call_flow2api(flow_model: str, prompt: str, image_parts: list[dict[str
     if not isinstance(data, dict):
         raise RuntimeError(f"Flow2API returned non-JSON response: {response.text[:1000]}")
     return extract_flow_image_url(data)
+
+
+async def cache_generated_image(task_id: str, image_url: str) -> str:
+    value = (image_url or "").strip()
+    if not value or value.startswith("/generated/") or value.startswith("data:"):
+        return value
+
+    try:
+        async with httpx.AsyncClient(timeout=60, trust_env=False, follow_redirects=True) as client:
+            response = await client.get(value)
+        response.raise_for_status()
+        if not response.content:
+            return value
+        ext = extension_from_content_type(response.headers.get("content-type", ""))
+        filename = f"{task_id}{ext}"
+        (GENERATED_DIR / filename).write_bytes(response.content)
+        return f"/generated/{filename}"
+    except Exception:
+        return value
 
 
 def task_row_to_payload(row: sqlite3.Row) -> dict[str, Any]:
@@ -700,6 +732,7 @@ async def create_image_task(
             flow_model = map_image_model(candidate_model, aspect_ratio, resolution)
             try:
                 image_url = await call_flow2api(flow_model, prompt, image_parts)
+                image_url = await cache_generated_image(task_id, image_url)
                 actual_model = candidate_model
                 actual_flow_model = flow_model
                 break
@@ -800,6 +833,8 @@ def healthz_head() -> JSONResponse:
 
 if DIST_DIR.exists():
     app.mount("/assets", StaticFiles(directory=DIST_DIR / "assets"), name="assets")
+
+app.mount("/generated", StaticFiles(directory=GENERATED_DIR), name="generated")
 
 
 @app.head("/{path:path}")
