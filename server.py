@@ -43,6 +43,7 @@ FLOW2API_TIMEOUT = float(os.getenv("FLOW2API_TIMEOUT", "360"))
 
 SITE_BASE_URL = os.getenv("SITE_BASE_URL", "https://nanobanan.vip").rstrip("/")
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api.nanobanan.vip").rstrip("/")
+ALLOWED_SITE_HOSTS = {"nanobanan.vip", "www.nanobanan.vip", "api.nanobanan.vip", "kewenai.shop", "www.kewenai.shop", "api.kewenai.shop"}
 
 XUNHUPAY_APPID = os.getenv("XUNHUPAY_APPID", os.getenv("HUPIJAO_APPID", ""))
 XUNHUPAY_APP_SECRET = os.getenv("XUNHUPAY_APP_SECRET", os.getenv("HUPIJAO_APP_SECRET", ""))
@@ -723,6 +724,23 @@ async def parse_payment_callback(request: Request) -> dict[str, str]:
     return {str(key): str(value) for key, value in parsed}
 
 
+def payment_return_base_url(request: Request) -> str:
+    for header_name in ("origin", "referer"):
+        raw_value = request.headers.get(header_name, "")
+        if not raw_value:
+            continue
+        parsed = urllib.parse.urlparse(raw_value)
+        if parsed.scheme in {"http", "https"} and parsed.netloc in ALLOWED_SITE_HOSTS:
+            return f"{parsed.scheme}://{parsed.netloc}"
+
+    host = request.headers.get("host", "")
+    if host in ALLOWED_SITE_HOSTS:
+        scheme = request.headers.get("x-forwarded-proto") or request.url.scheme or "https"
+        return f"{scheme}://{host}"
+
+    return SITE_BASE_URL
+
+
 class AuthRequest(BaseModel):
     email: str
     password: str
@@ -954,7 +972,11 @@ def get_recharge_order(
 
 
 @app.post("/payment/recharge")
-async def create_recharge(body: RechargeRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+async def create_recharge(
+    body: RechargeRequest,
+    request: Request,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
     if not XUNHUPAY_APPID or not XUNHUPAY_APP_SECRET:
         raise HTTPException(status_code=500, detail="XunHuPay is not configured")
 
@@ -971,7 +993,7 @@ async def create_recharge(body: RechargeRequest, user: dict[str, Any] = Depends(
         "title": f"NanoBanan {total_points} points",
         "time": str(int(time.time())),
         "notify_url": f"{API_BASE_URL}/payment/hupijiao/notify",
-        "return_url": f"{SITE_BASE_URL}/?payment=return&trade_order_id={trade_order_id}",
+        "return_url": f"{payment_return_base_url(request)}/?payment=return&trade_order_id={trade_order_id}",
         "nonce_str": secrets.token_hex(16),
         "plugins": "kewen-ai",
     }
