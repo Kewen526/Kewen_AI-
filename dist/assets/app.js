@@ -536,10 +536,24 @@ const renderSidePanel = () => `
 `;
 
 const renderStudio = () => `
-  <main class="studio-shell">
-    ${renderCreatePanel()}
-    ${renderResultPanel()}
-    ${renderSidePanel()}
+  <main class="studio-page">
+    <section class="studio-hero">
+      <div>
+        <span class="eyebrow">AI Image Studio</span>
+        <h1>Nano Banana 图像生成工作台</h1>
+        <p>面向商品实拍、参考图改写和批量内容生产。选择模型、尺寸和清晰度，上传参考图后即可生成，结果默认保留 ${state.imageRetentionDays || 7} 天。</p>
+      </div>
+      <div class="studio-metrics">
+        <div><span>图像模型</span><strong>${familyOptions().length || 0}</strong></div>
+        <div><span>当前消耗</span><strong>${currentCost()} 分</strong></div>
+        <div><span>账户积分</span><strong>${Number(state.user?.points || 0).toLocaleString("zh-CN")}</strong></div>
+      </div>
+    </section>
+    <section class="studio-shell">
+      ${renderCreatePanel()}
+      ${renderResultPanel()}
+      ${renderSidePanel()}
+    </section>
   </main>
 `;
 
@@ -644,38 +658,67 @@ const renderApiModelRow = (model) => `
 const renderApiDocs = () => {
   const base = apiBaseUrl();
   const apiKey = state.user?.api_key || "";
-  const exampleModel = state.models[0]?.id || "kewen-nano-banana-2-4x3-1k";
+  const exampleModel = state.models.find((model) => model.family_id === "nano-banana-2" && model.aspect_ratio === "16:9" && model.resolution === "1K")?.id || state.models[0]?.id || "kewen-nano-banana-2-16x9-1k";
+  const proModel = state.models.find((model) => model.family_id === "nano-banana-pro" && model.aspect_ratio === "4:3" && model.resolution === "2K")?.id || "kewen-nano-banana-pro-4x3-2k";
+  const modelFamilies = familyOptions();
   return `
     <main class="api-page">
       <section class="api-hero">
         <div>
           <span class="eyebrow">Open API</span>
-          <h1>把图片生成接入你的业务系统</h1>
-          <p>API 与网页端使用同一套后端模型。这里展示的是 Kewen AI 公开模型 ID，真实上游模型由服务端自动映射。生成图片文件默认保留 ${state.imageRetentionDays || 7} 天。</p>
+          <h1>Nano Banana 图像 API</h1>
+          <p>把网页端同款图像生成能力接入你的业务系统。API 使用公开模型 ID，后端负责匹配真实上游模型、失败切换、扣费和图片缓存。</p>
         </div>
         <div class="api-base">
           <span>Base URL</span>
           <strong>${escapeHtml(base)}</strong>
+          <em>图片结果默认保留 ${state.imageRetentionDays || 7} 天，过期后自动清理。</em>
         </div>
       </section>
 
-      <section class="api-grid">
-        <article class="api-card api-key-card">
+      <section class="api-doc-layout">
+        <aside class="api-sidebar">
+          <a href="#api-key">API Key</a>
+          <a href="#image-models">图像模型</a>
+          <a href="#submit-task">提交任务</a>
+          <a href="#poll-task">轮询结果</a>
+          <a href="#upload-images">上传参考图</a>
+          <a href="#webhook">Webhook</a>
+          <a href="#errors">错误与计费</a>
+        </aside>
+
+        <div class="api-doc-content">
+        <article id="api-key" class="api-card api-section api-key-card">
           <div class="api-card-title">
-            <h2>1. 你的 API Key</h2>
+            <div>
+              <span class="api-step">01</span>
+              <h2>API Key</h2>
+            </div>
             <button class="ghost-btn" data-copy-value="${escapeHtml(apiKey)}">复制</button>
           </div>
           <div class="key-box">${escapeHtml(apiKey || "登录后自动生成")}</div>
-          <p>外部系统调用接口时，把这个 Key 放到 <code>Authorization: Bearer</code> 里。</p>
+          <p>所有 API 请求必须包含 <code>Authorization: Bearer YOUR_API_KEY</code>。你可以在这里复制当前账号的 Key，也可以重置后重新接入。</p>
           <button class="danger-btn" data-rotate-api-key>重置 API Key</button>
         </article>
-        <article class="api-card">
-          <h2>2. 获取模型列表</h2>
+
+        <article id="image-models" class="api-card api-section">
+          <span class="api-step">02</span>
+          <h2>图像模型</h2>
+          <p>前端只展示模型系列、尺寸和清晰度；API 返回的也是 Kewen AI 公开模型 ID，不会暴露 Flow2API 的具体上游模型名称。</p>
+          <div class="api-model-grid">
+            ${modelFamilies.map((family) => `
+              <div class="api-model-card">
+                <div class="api-model-head">
+                  <span>${escapeHtml(family.shortName || "AI")}</span>
+                  <strong>${escapeHtml(family.name)}</strong>
+                </div>
+                <p>${escapeHtml(family.description || "")}</p>
+                <small>${escapeHtml(family.id === "nano-banana-pro" ? "1K 6 分 · 2K 7 分 · 4K 9 分" : "1K 5 分 · 2K 6 分 · 4K 7 分")}</small>
+              </div>
+            `).join("")}
+          </div>
           <pre><code>curl ${escapeHtml(base)}/v1/models \\
   -H "Authorization: Bearer YOUR_API_KEY"</code></pre>
-        </article>
-        <article class="api-card wide">
-          <h2>3. 可用模型</h2>
           <div class="model-table-wrap">
             <table class="model-table">
               <thead>
@@ -693,17 +736,106 @@ const renderApiDocs = () => {
             </table>
           </div>
         </article>
-        <article class="api-card wide">
-          <h2>4. 上传多张参考图并生成</h2>
-          <pre><code>curl -X POST ${escapeHtml(base)}/v1/generate/upload \\
+
+        <article id="submit-task" class="api-card api-section">
+          <span class="api-step">03</span>
+          <h2>提交图像生成任务</h2>
+          <p>通过 JSON 提交任务后立即返回任务 ID。任务会异步生成，状态不是 <code>completed</code> 或 <code>failed</code> 时都按进行中处理。</p>
+          <pre><code>curl -X POST "${escapeHtml(base)}/v1/images/generations" \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
-  -F "model=${escapeHtml(exampleModel)}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "${escapeHtml(exampleModel)}",
+    "prompt": "A clean product photo on a real shelf",
+    "aspect_ratio": "16:9",
+    "image_size": "1K"
+  }'</code></pre>
+          <div class="param-table-wrap">
+            <table class="param-table">
+              <thead><tr><th>参数</th><th>类型</th><th>必填</th><th>说明</th></tr></thead>
+              <tbody>
+                <tr><td><code>model</code></td><td>String</td><td>是</td><td>公开模型 ID，例如 <code>${escapeHtml(exampleModel)}</code>。</td></tr>
+                <tr><td><code>prompt</code></td><td>String</td><td>是</td><td>描述你想生成的图像。</td></tr>
+                <tr><td><code>aspect_ratio</code></td><td>Enum</td><td>否</td><td><code>auto</code>、<code>1:1</code>、<code>16:9</code>、<code>9:16</code>、<code>4:3</code>、<code>3:4</code>。</td></tr>
+                <tr><td><code>image_size</code></td><td>Enum</td><td>否</td><td><code>1K</code>、<code>2K</code>、<code>4K</code>。</td></tr>
+                <tr><td><code>image_urls</code></td><td>Array</td><td>否</td><td>公网可访问的参考图 URL 列表。</td></tr>
+                <tr><td><code>webhook_url</code></td><td>String</td><td>否</td><td>任务完成或失败时接收回调，必须是 HTTPS。</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <pre><code>{
+  "id": "img_xxxxx",
+  "object": "image.generation",
+  "model": "${escapeHtml(exampleModel)}",
+  "status": "processing",
+  "created": 1784870000
+}</code></pre>
+        </article>
+
+        <article id="poll-task" class="api-card api-section">
+          <span class="api-step">04</span>
+          <h2>轮询任务结果</h2>
+          <p>推荐每 2 秒查询一次。成功后返回图片 URL 和原始 prompt；失败任务不会扣积分。</p>
+          <pre><code>curl -X GET "${escapeHtml(base)}/v1/images/img_xxxxx" \\
+  -H "Authorization: Bearer YOUR_API_KEY"</code></pre>
+          <pre><code>{
+  "id": "img_xxxxx",
+  "object": "image.generation",
+  "model": "${escapeHtml(exampleModel)}",
+  "status": "completed",
+  "results": [
+    {
+      "url": "https://api.nanobanan.vip/generated/xxxx.png",
+      "content": "A clean product photo on a real shelf",
+      "expires_at": "2026-07-31T12:00:00"
+    }
+  ],
+  "failure_reason": "",
+  "error": ""
+}</code></pre>
+        </article>
+
+        <article id="upload-images" class="api-card api-section">
+          <span class="api-step">05</span>
+          <h2>上传多张参考图并生成</h2>
+          <p>如果参考图在本地，使用 multipart 接口上传。字段 <code>product_images</code> 可重复传多张图片。</p>
+          <pre><code>curl -X POST "${escapeHtml(base)}/v1/generate/upload" \\
+  -H "Authorization: Bearer YOUR_API_KEY" \\
+  -F "model=${escapeHtml(proModel)}" \\
   -F "aspect_ratio=4:3" \\
-  -F "resolution=1K" \\
-  -F "prompt=按参考图生成真实商品实拍图" \\
+  -F "resolution=2K" \\
+  -F "prompt=根据参考图生成真实自然的商品实拍图" \\
   -F "product_images=@scene.png" \\
   -F "product_images=@product.png"</code></pre>
         </article>
+
+        <article id="webhook" class="api-card api-section">
+          <span class="api-step">06</span>
+          <h2>Webhook 回调</h2>
+          <p>提交 JSON 任务时传入 <code>webhook_url</code> 后，任务完成或失败会向该地址 POST 最终结果。建议收到回调后再用任务 ID 查询一次结果做交叉校验。</p>
+          <div class="param-table-wrap">
+            <table class="param-table">
+              <thead><tr><th>Header</th><th>说明</th></tr></thead>
+              <tbody>
+                <tr><td><code>X-Kewen-Event</code></td><td><code>image.generation.completed</code> 或 <code>image.generation.failed</code>。</td></tr>
+                <tr><td><code>X-Kewen-Invocation-Id</code></td><td>任务 ID。</td></tr>
+                <tr><td><code>X-Kewen-Attempt</code></td><td>当前投递次数。</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+
+        <article id="errors" class="api-card api-section">
+          <span class="api-step">07</span>
+          <h2>错误与计费</h2>
+          <ul class="notice-list">
+            <li><strong>成功扣费：</strong>只有生成成功并拿到图片后才扣积分。</li>
+            <li><strong>失败不扣：</strong>上游错误、审核失败、超时失败均不会扣除生成积分。</li>
+            <li><strong>图片保留：</strong>生成结果缓存在服务器 ${state.imageRetentionDays || 7} 天，到期自动清理。</li>
+            <li><strong>模型切换：</strong>Nano Banana Pro 遇到 5xx 错误时会尝试切换同规格备用模型。</li>
+          </ul>
+        </article>
+        </div>
       </section>
     </main>
   `;

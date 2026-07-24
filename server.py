@@ -604,6 +604,33 @@ def task_row_to_payload(row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
+def task_row_to_image_generation(row: sqlite3.Row) -> dict[str, Any]:
+    task = task_row_to_payload(row)
+    status = "completed" if task["status"] == "success" else "failed" if task["status"] == "failed" else "processing"
+    payload: dict[str, Any] = {
+        "id": task["task_id"],
+        "object": "image.generation",
+        "model": task["model"],
+        "status": status,
+        "created": int(datetime.fromisoformat(task["created_at"]).timestamp()) if task.get("created_at") else int(time.time()),
+        "results": [],
+        "failure_reason": "",
+        "error": "",
+    }
+    if status == "completed" and task.get("result_image_url"):
+        payload["results"] = [
+            {
+                "url": task["result_image_url"],
+                "content": task["prompt"],
+                "expires_at": task.get("result_image_expires_at"),
+            }
+        ]
+    if status == "failed":
+        payload["failure_reason"] = "provider_error"
+        payload["error"] = task.get("error_msg") or "Generation failed"
+    return payload
+
+
 def save_task(user_id: int, payload: dict[str, Any]) -> None:
     with db() as con:
         con.execute(
@@ -756,6 +783,15 @@ class GenerateRequest(BaseModel):
     product_image_url: Optional[str] = None
     scene_image_url: Optional[str] = None
     image_urls: Optional[list[str]] = None
+
+
+class ImageGenerationRequest(BaseModel):
+    model: str = "nano-banana-2"
+    prompt: str
+    aspect_ratio: str = "1:1"
+    image_size: str = "1K"
+    image_urls: Optional[list[str]] = None
+    webhook_url: Optional[str] = None
 
 
 class RechargeRequest(BaseModel):
@@ -1072,6 +1108,28 @@ async def create_recharge(
     }
 
 
+def update_task(task_id: str, payload: dict[str, Any]) -> None:
+    assignments = []
+    values: list[Any] = []
+    for key in ("status", "flow_model", "result_image_url", "error_msg", "points_cost", "duration_seconds", "updated_at"):
+        if key in payload:
+            assignments.append(f"{key} = ?")
+            values.append(payload[key])
+    if not assignments:
+        return
+    values.append(task_id)
+    with db() as con:
+        con.execute(f"UPDATE tasks SET {', '.join(assignments)} WHERE task_id = ?", values)
+
+
+def get_task_for_user(task_id: str, user_id: int) -> Optional[sqlite3.Row]:
+    with db() as con:
+        return con.execute(
+            "SELECT * FROM tasks WHERE task_id = ? AND user_id = ?",
+            (task_id, user_id),
+        ).fetchone()
+
+
 @app.post("/payment/hupijiao/notify")
 async def hupijiao_notify(request: Request) -> PlainTextResponse:
     data = await parse_payment_callback(request)
@@ -1224,6 +1282,153 @@ async def create_image_task(
         }
         save_task(user["id"], task)
         raise HTTPException(status_code=500, detail=task["error_msg"])
+
+
+@app.post("/v1/images/generations")
+async def submit_image_generation(
+    body: ImageGenerationRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    prompt = (body.prompt or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="prompt is required")
+    aspect_ratio = "1:1" if body.aspect_ratio == "auto" else body.aspect_ratio
+    if aspect_ratio not in ASPECT_SUFFIX:
+        raise HTTPException(status_code=400, detail=f"Unsupported aspect_ratio: {body.aspect_ratio}")
+    resolution = normalize_resolution(body.image_size)
+    model = body.model or "nano-banana-2"
+    if not model_family_id(model) and model not in public_model_catalog_lookup():
+        raise HTTPException(status_code=400, detail=f"Unsupported image model: {model}")
+
+    created_at = now_iso()
+    task_id = "img_" + secrets.token_urlsafe(16)
+    image_parts = [image_url_part(url) for url in (body.image_urls or []) if url]
+    task = {
+        "task_id": task_id,
+        "task_type": "image",
+        "model": model,
+        "flow_model": None,
+        "prompt": prompt,
+        "status": "processing",
+        "result_image_url": None,
+        "error_msg": None,
+        "points_cost": model_cost(model, resolution),
+        "duration_seconds": None,
+        "created_at": created_at,
+        "updated_at": created_at,
+    }
+    save_task(user["id"], task)
+    asyncio.create_task(
+        run_async_image_generation(
+            user_id=user["id"],
+            task_id=task_id,
+            model=model,
+            prompt=prompt,
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+            image_parts=image_parts,
+            webhook_url=body.webhook_url,
+        )
+    )
+    return {
+        "id": task_id,
+        "object": "image.generation",
+        "model": model,
+        "status": "processing",
+        "created": int(datetime.fromisoformat(created_at).timestamp()),
+    }
+
+
+@app.get("/v1/images/{image_id}")
+async def get_image_generation(image_id: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    row = get_task_for_user(image_id, user["id"])
+    if not row:
+        raise HTTPException(status_code=404, detail="Image generation not found")
+    return task_row_to_image_generation(row)
+
+
+async def deliver_image_webhook(webhook_url: Optional[str], payload: dict[str, Any]) -> None:
+    if not webhook_url:
+        return
+    parsed = urllib.parse.urlparse(webhook_url)
+    if parsed.scheme != "https" or not parsed.netloc:
+        return
+    headers = {
+        "Content-Type": "application/json",
+        "X-Kewen-Event": f"image.generation.{payload.get('status', 'unknown')}",
+        "X-Kewen-Invocation-Id": str(payload.get("id", "")),
+        "X-Kewen-Attempt": "1",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10, trust_env=False) as client:
+            await client.post(webhook_url, headers=headers, json=payload)
+    except Exception:
+        return
+
+
+async def run_async_image_generation(
+    user_id: int,
+    task_id: str,
+    model: str,
+    prompt: str,
+    aspect_ratio: str,
+    resolution: str,
+    image_parts: list[dict[str, Any]],
+    webhook_url: Optional[str],
+) -> None:
+    started = time.monotonic()
+    attempted_errors: list[str] = []
+    try:
+        image_url = ""
+        actual_model = model
+        actual_flow_model = ""
+        for candidate_model in model_attempt_order(model):
+            flow_model = map_image_model(candidate_model, aspect_ratio, resolution)
+            try:
+                image_url = await call_flow2api(flow_model, prompt, image_parts)
+                image_url = await cache_generated_image(task_id, image_url)
+                actual_model = candidate_model
+                actual_flow_model = flow_model
+                break
+            except Flow2APIError as exc:
+                attempted_errors.append(f"{candidate_model}: HTTP {exc.status_code} {exc.message}")
+                if exc.status_code < 500:
+                    raise
+                continue
+
+        if not image_url:
+            raise RuntimeError("All model attempts failed: " + " | ".join(attempted_errors))
+
+        cost = model_cost(actual_model, resolution)
+        update_task(
+            task_id,
+            {
+                "status": "success",
+                "flow_model": actual_flow_model,
+                "result_image_url": image_url,
+                "error_msg": None,
+                "points_cost": cost,
+                "duration_seconds": time.monotonic() - started,
+                "updated_at": now_iso(),
+            },
+        )
+        charge_points(user_id, cost, f"Image generation: {actual_model}")
+    except Exception as exc:
+        update_task(
+            task_id,
+            {
+                "status": "failed",
+                "error_msg": (" | ".join(attempted_errors) or str(exc))[:1000],
+                "points_cost": 0,
+                "duration_seconds": time.monotonic() - started,
+                "updated_at": now_iso(),
+            },
+        )
+
+    with db() as con:
+        row = con.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+    if row:
+        await deliver_image_webhook(webhook_url, task_row_to_image_generation(row))
 
 
 @app.post("/v1/generate")
