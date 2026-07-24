@@ -13,9 +13,12 @@ const state = {
   selectedResolution: "",
   files: [],
   tasks: [],
+  rechargeOrders: [],
+  rechargeOptions: null,
   imageRetentionDays: 7,
   selectedTaskId: "",
   generating: false,
+  recharging: false,
   prompt: "",
   toast: "",
 };
@@ -70,6 +73,9 @@ const escapeHtml = (value) =>
 const uniq = (items) => [...new Set(items.filter(Boolean))];
 
 const apiBaseUrl = () => {
+  if (["nanobanan.vip", "www.nanobanan.vip"].includes(location.hostname)) {
+    return "https://api.nanobanan.vip";
+  }
   if (["kewenai.shop", "www.kewenai.shop"].includes(location.hostname)) {
     return "https://api.kewenai.shop";
   }
@@ -127,6 +133,15 @@ const loadUser = async () => {
 const loadTasks = async () => {
   if (!state.user) return;
   state.tasks = await api("/v1/tasks?limit=24");
+};
+
+const loadRechargeOptions = async () => {
+  state.rechargeOptions = await api("/payment/recharge/options");
+};
+
+const loadRechargeOrders = async () => {
+  if (!state.user) return;
+  state.rechargeOrders = await api("/payment/recharge/orders?limit=20");
 };
 
 const familyDescription = (familyId) =>
@@ -203,6 +218,7 @@ const authSubmit = async (event) => {
     localStorage.setItem(tokenKey, state.token);
     state.user = payload;
     await loadTasks();
+    await loadRechargeOrders();
     render();
   } catch (error) {
     toast(error.message);
@@ -214,6 +230,7 @@ const logout = () => {
   state.token = null;
   state.user = null;
   state.tasks = [];
+  state.rechargeOrders = [];
   render();
 };
 
@@ -255,6 +272,37 @@ const generate = async () => {
     toast(error.message);
   } finally {
     state.generating = false;
+    render();
+  }
+};
+
+const createRecharge = async (amount) => {
+  if (state.recharging) return;
+  const numericAmount = Number(amount);
+  if (!Number.isFinite(numericAmount) || numericAmount < 5) {
+    return toast("最低充值 5 元");
+  }
+  state.recharging = true;
+  render();
+  try {
+    const order = await api("/payment/recharge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount_yuan: numericAmount }),
+    });
+    await loadRechargeOrders();
+    if (order.payment_url) {
+      window.open(order.payment_url, "_blank", "noopener,noreferrer");
+      toast("支付页面已打开，到账后积分会自动更新");
+    } else {
+      toast("订单已创建，请在支付网关继续完成付款");
+    }
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    state.recharging = false;
+    await loadUser();
+    await loadRechargeOrders();
     render();
   }
 };
@@ -495,6 +543,94 @@ const renderStudio = () => `
   </main>
 `;
 
+const rechargePackages = () => state.rechargeOptions?.packages || [
+  { amount_yuan: 5, base_points: 500, bonus_points: 0, total_points: 500 },
+  { amount_yuan: 10, base_points: 1000, bonus_points: 30, total_points: 1030 },
+  { amount_yuan: 100, base_points: 10000, bonus_points: 500, total_points: 10500 },
+  { amount_yuan: 1000, base_points: 100000, bonus_points: 6000, total_points: 106000 },
+];
+
+const renderRechargePackage = (item) => `
+  <button class="recharge-card" type="button" data-recharge-amount="${Number(item.amount_yuan)}">
+    <span>¥${Number(item.amount_yuan).toLocaleString("zh-CN")}</span>
+    <strong>${Number(item.total_points).toLocaleString("zh-CN")} 积分</strong>
+    <small>${Number(item.bonus_points || 0) ? `赠送 ${Number(item.bonus_points).toLocaleString("zh-CN")} 积分` : "基础充值"}</small>
+  </button>
+`;
+
+const renderRechargeOrder = (order) => {
+  const statusText = order.status === "paid" ? "已到账" : order.status === "failed" ? "失败" : "待支付";
+  const statusClass = order.status === "paid" ? "ok" : order.status === "failed" ? "failed" : "working";
+  return `
+    <article class="recharge-order">
+      <div>
+        <strong>¥${Number(order.amount_yuan || 0).toFixed(2)} · ${Number(order.total_points || 0).toLocaleString("zh-CN")} 积分</strong>
+        <span>${escapeHtml(formatDateTime(order.created_at))} · ${escapeHtml(order.trade_order_id)}</span>
+      </div>
+      <span class="status ${statusClass}">${statusText}</span>
+    </article>
+  `;
+};
+
+const renderBilling = () => `
+  <main class="billing-page">
+    <section class="billing-hero">
+      <div>
+        <span class="eyebrow">Balance</span>
+        <h1>账户充值</h1>
+        <p>支付完成并收到虎皮椒到账通知后，系统会自动把积分充入当前账户。最低充值 5 元，1 元 = 100 积分。</p>
+      </div>
+      <div class="billing-balance">
+        <span>当前积分</span>
+        <strong>${Number(state.user?.points || 0).toLocaleString("zh-CN")}</strong>
+      </div>
+    </section>
+
+    <section class="billing-grid">
+      <article class="billing-card wide">
+        <div class="billing-card-head">
+          <div>
+            <h2>选择充值金额</h2>
+            <p>10-99 元送 30 积分，100-999 元送 500 积分，1000 元及以上送 6000 积分。</p>
+          </div>
+        </div>
+        <div class="recharge-packages">
+          ${rechargePackages().map(renderRechargePackage).join("")}
+        </div>
+        <div class="custom-recharge">
+          <label class="field">
+            <span>自定义金额</span>
+            <input id="custom-recharge-amount" type="number" min="5" step="0.01" placeholder="最低 5 元" />
+          </label>
+          <button class="primary-btn" id="custom-recharge-btn" ${state.recharging ? "disabled" : ""}>${state.recharging ? "创建订单中..." : "立即充值"}</button>
+        </div>
+      </article>
+
+      <article class="billing-card">
+        <h2>充值说明</h2>
+        <div class="billing-notes">
+          <p>付款成功后请等待页面自动到账；如果支付窗口已关闭，可回到本页刷新查看订单状态。</p>
+          <p>系统只在服务端确认支付通知验签通过后加积分，未到账订单不会发放积分。</p>
+          <p>新注册用户自动赠送 15 积分。</p>
+        </div>
+      </article>
+
+      <article class="billing-card wide">
+        <div class="billing-card-head">
+          <div>
+            <h2>充值记录</h2>
+            <p>最近 20 条充值订单。</p>
+          </div>
+          <button class="ghost-btn" data-refresh-recharge>刷新</button>
+        </div>
+        <div class="recharge-order-list">
+          ${state.rechargeOrders.length ? state.rechargeOrders.map(renderRechargeOrder).join("") : `<div class="muted">暂无充值记录</div>`}
+        </div>
+      </article>
+    </section>
+  </main>
+`;
+
 const renderApiModelRow = (model) => `
   <tr>
     <td><code>${escapeHtml(model.id)}</code></td>
@@ -616,6 +752,7 @@ const renderWorkspace = () => `
       <div class="brand"><div class="brand-mark">K</div><span>Kewen AI</span></div>
       <nav class="main-nav">
         <button class="${state.view === "studio" ? "active" : ""}" data-view="studio">${copy.studio}</button>
+        <button class="${state.view === "billing" ? "active" : ""}" data-view="billing">充值</button>
         <button class="${state.view === "api" ? "active" : ""}" data-view="api">${copy.api}</button>
       </nav>
       <div class="top-actions">
@@ -624,7 +761,7 @@ const renderWorkspace = () => `
         <button class="ghost-btn" id="logout-btn">${copy.logout}</button>
       </div>
     </header>
-    ${state.view === "api" ? renderApiDocs() : renderStudio()}
+    ${state.view === "api" ? renderApiDocs() : state.view === "billing" ? renderBilling() : renderStudio()}
     ${renderTaskModal()}
   </div>
 `;
@@ -640,8 +777,18 @@ const wireEvents = () => {
   document.getElementById("logout-btn")?.addEventListener("click", logout);
 
   document.querySelectorAll("[data-view]").forEach((button) => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", async () => {
       state.view = button.dataset.view;
+      if (state.view === "billing") {
+        try {
+          if (!state.rechargeOptions) await loadRechargeOptions();
+          await loadRechargeOrders();
+          await loadUser();
+        } catch (error) {
+          toast(error.message);
+          return;
+        }
+      }
       render();
     });
   });
@@ -666,6 +813,25 @@ const wireEvents = () => {
         render();
       }
     });
+  });
+
+  document.querySelectorAll("[data-recharge-amount]").forEach((button) => {
+    button.addEventListener("click", () => createRecharge(button.dataset.rechargeAmount));
+  });
+
+  document.getElementById("custom-recharge-btn")?.addEventListener("click", () => {
+    createRecharge(document.getElementById("custom-recharge-amount")?.value);
+  });
+
+  document.querySelector("[data-refresh-recharge]")?.addEventListener("click", async () => {
+    try {
+      await loadUser();
+      await loadRechargeOrders();
+      toast("充值记录已刷新");
+    } catch (error) {
+      toast(error.message);
+    }
+    render();
   });
 
   document.querySelectorAll("[data-family-id]").forEach((button) => {
@@ -722,8 +888,12 @@ const boot = async () => {
   render();
   try {
     await loadModels();
+    await loadRechargeOptions();
     await loadUser();
-    if (state.user) await loadTasks();
+    if (state.user) {
+      await loadTasks();
+      await loadRechargeOrders();
+    }
   } catch (error) {
     toast(error.message);
   }

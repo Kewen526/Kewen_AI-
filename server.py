@@ -10,7 +10,9 @@ import re
 import secrets
 import sqlite3
 import time
+import urllib.parse
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from email.parser import BytesParser
 from email.policy import default as email_policy
 from pathlib import Path
@@ -21,6 +23,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.responses import JSONResponse
+from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -37,6 +40,17 @@ GENERATED_CLEANUP_INTERVAL_SECONDS = int(os.getenv("GENERATED_CLEANUP_INTERVAL_S
 FLOW2API_URL = os.getenv("FLOW2API_URL", "http://43.155.157.57:38000/v1/chat/completions")
 FLOW2API_KEY = os.getenv("FLOW2API_KEY", "han1234")
 FLOW2API_TIMEOUT = float(os.getenv("FLOW2API_TIMEOUT", "360"))
+
+SITE_BASE_URL = os.getenv("SITE_BASE_URL", "https://nanobanan.vip").rstrip("/")
+API_BASE_URL = os.getenv("API_BASE_URL", "https://api.nanobanan.vip").rstrip("/")
+
+XUNHUPAY_APPID = os.getenv("XUNHUPAY_APPID", os.getenv("HUPIJAO_APPID", ""))
+XUNHUPAY_APP_SECRET = os.getenv("XUNHUPAY_APP_SECRET", os.getenv("HUPIJAO_APP_SECRET", ""))
+XUNHUPAY_GATEWAY = os.getenv("XUNHUPAY_GATEWAY", "https://api.xunhupay.com/payment/do.html")
+XUNHUPAY_PAYMENT = os.getenv("XUNHUPAY_PAYMENT", "")
+
+REGISTER_BONUS_POINTS = 15
+MIN_RECHARGE_YUAN = Decimal("5.00")
 
 IMAGE_COSTS = {
     "nano-banana-2": {
@@ -168,6 +182,26 @@ def init_db() -> None:
                 balance_after REAL NOT NULL,
                 note TEXT,
                 created_at TEXT NOT NULL
+            )
+            """
+        )
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS recharge_orders (
+                trade_order_id TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                amount_yuan REAL NOT NULL,
+                base_points INTEGER NOT NULL,
+                bonus_points INTEGER NOT NULL,
+                total_points INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                provider TEXT NOT NULL DEFAULT 'xunhupay',
+                provider_transaction_id TEXT,
+                pay_url TEXT,
+                raw_notify TEXT,
+                created_at TEXT NOT NULL,
+                paid_at TEXT,
+                updated_at TEXT NOT NULL
             )
             """
         )
@@ -613,6 +647,82 @@ def charge_points(user_id: int, points: int, note: str) -> None:
         )
 
 
+def parse_money(value: Any) -> Decimal:
+    try:
+        amount = Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    except (InvalidOperation, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid recharge amount")
+    if amount < MIN_RECHARGE_YUAN:
+        raise HTTPException(status_code=400, detail="Minimum recharge amount is 5 yuan")
+    if amount > Decimal("100000.00"):
+        raise HTTPException(status_code=400, detail="Recharge amount is too large")
+    return amount
+
+
+def recharge_bonus_points(amount: Decimal) -> int:
+    if amount >= Decimal("1000.00"):
+        return 6000
+    if amount >= Decimal("100.00"):
+        return 500
+    if amount >= Decimal("10.00"):
+        return 30
+    return 0
+
+
+def recharge_points(amount: Decimal) -> tuple[int, int, int]:
+    base_points = int((amount * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    bonus_points = recharge_bonus_points(amount)
+    return base_points, bonus_points, base_points + bonus_points
+
+
+def xunhupay_hash(params: dict[str, Any]) -> str:
+    if not XUNHUPAY_APP_SECRET:
+        raise HTTPException(status_code=500, detail="XunHuPay secret is not configured")
+    filtered = {
+        str(key): str(value)
+        for key, value in params.items()
+        if key not in {"hash", "sign"} and value is not None and str(value) != ""
+    }
+    payload = "&".join(f"{key}={filtered[key]}" for key in sorted(filtered))
+    return hashlib.md5((payload + XUNHUPAY_APP_SECRET).encode("utf-8")).hexdigest()
+
+
+def verify_xunhupay_hash(params: dict[str, Any]) -> bool:
+    received = str(params.get("hash") or params.get("sign") or "").lower()
+    if not received:
+        return False
+    expected = xunhupay_hash(params)
+    return secrets.compare_digest(received, expected)
+
+
+def recharge_order_payload(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "trade_order_id": row["trade_order_id"],
+        "amount_yuan": row["amount_yuan"],
+        "base_points": row["base_points"],
+        "bonus_points": row["bonus_points"],
+        "total_points": row["total_points"],
+        "status": row["status"],
+        "pay_url": row["pay_url"],
+        "created_at": row["created_at"],
+        "paid_at": row["paid_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+async def parse_payment_callback(request: Request) -> dict[str, str]:
+    body = await request.body()
+    content_type = request.headers.get("content-type", "").lower()
+    if "application/json" in content_type:
+        try:
+            data = json.loads(body.decode("utf-8"))
+        except Exception:
+            data = {}
+        return {str(key): str(value) for key, value in data.items()}
+    parsed = urllib.parse.parse_qsl(body.decode("utf-8", errors="replace"), keep_blank_values=True)
+    return {str(key): str(value) for key, value in parsed}
+
+
 class AuthRequest(BaseModel):
     email: str
     password: str
@@ -628,6 +738,10 @@ class GenerateRequest(BaseModel):
     product_image_url: Optional[str] = None
     scene_image_url: Optional[str] = None
     image_urls: Optional[list[str]] = None
+
+
+class RechargeRequest(BaseModel):
+    amount_yuan: float
 
 
 app = FastAPI(title="Kewen AI Flow2API Adapter")
@@ -658,11 +772,24 @@ def register(body: AuthRequest) -> dict[str, Any]:
             cur = con.execute(
                 """
                 INSERT INTO users(email, username, password_hash, api_key, points, created_at)
-                VALUES (?, ?, ?, ?, 1000, ?)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (email, username, password_hash(body.password), new_api_key(), now_iso()),
+                (email, username, password_hash(body.password), new_api_key(), REGISTER_BONUS_POINTS, now_iso()),
             )
             user_id = cur.lastrowid
+            con.execute(
+                """
+                INSERT INTO transactions(user_id, type, amount, balance_after, note, created_at)
+                VALUES (?, 'register_bonus', ?, ?, ?, ?)
+                """,
+                (
+                    user_id,
+                    REGISTER_BONUS_POINTS / 100,
+                    REGISTER_BONUS_POINTS / 100,
+                    "New user bonus",
+                    now_iso(),
+                ),
+            )
             row = con.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -764,6 +891,243 @@ def list_transactions(
             (user["id"], max(1, min(limit, 200))),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+@app.get("/payment/recharge/options")
+def recharge_options() -> dict[str, Any]:
+    packages = []
+    for amount in (Decimal("5.00"), Decimal("10.00"), Decimal("100.00"), Decimal("1000.00")):
+        base_points, bonus_points, total_points = recharge_points(amount)
+        packages.append(
+            {
+                "amount_yuan": float(amount),
+                "base_points": base_points,
+                "bonus_points": bonus_points,
+                "total_points": total_points,
+            }
+        )
+    return {
+        "provider": "xunhupay",
+        "minimum_amount_yuan": float(MIN_RECHARGE_YUAN),
+        "points_per_yuan": 100,
+        "bonus_rules": [
+            {"min_yuan": 10, "max_yuan": 99.99, "bonus_points": 30},
+            {"min_yuan": 100, "max_yuan": 999.99, "bonus_points": 500},
+            {"min_yuan": 1000, "max_yuan": None, "bonus_points": 6000},
+        ],
+        "packages": packages,
+    }
+
+
+@app.get("/payment/recharge/orders")
+def list_recharge_orders(
+    limit: int = 20,
+    user: dict[str, Any] = Depends(current_user),
+) -> list[dict[str, Any]]:
+    with db() as con:
+        rows = con.execute(
+            """
+            SELECT *
+            FROM recharge_orders
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (user["id"], max(1, min(limit, 100))),
+        ).fetchall()
+    return [recharge_order_payload(row) for row in rows]
+
+
+@app.get("/payment/recharge/orders/{trade_order_id}")
+def get_recharge_order(
+    trade_order_id: str,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    with db() as con:
+        row = con.execute(
+            "SELECT * FROM recharge_orders WHERE trade_order_id = ? AND user_id = ?",
+            (trade_order_id, user["id"]),
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Recharge order not found")
+    return recharge_order_payload(row)
+
+
+@app.post("/payment/recharge")
+async def create_recharge(body: RechargeRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    if not XUNHUPAY_APPID or not XUNHUPAY_APP_SECRET:
+        raise HTTPException(status_code=500, detail="XunHuPay is not configured")
+
+    amount = parse_money(body.amount_yuan)
+    base_points, bonus_points, total_points = recharge_points(amount)
+    trade_order_id = f"NB{int(time.time())}{user['id']}{secrets.token_hex(4)}"
+    created_at = now_iso()
+
+    params: dict[str, Any] = {
+        "version": "1.1",
+        "appid": XUNHUPAY_APPID,
+        "trade_order_id": trade_order_id,
+        "total_fee": f"{amount:.2f}",
+        "title": f"NanoBanan {total_points} points",
+        "time": str(int(time.time())),
+        "notify_url": f"{API_BASE_URL}/payment/hupijiao/notify",
+        "return_url": f"{SITE_BASE_URL}/?payment=return&trade_order_id={trade_order_id}",
+        "nonce_str": secrets.token_hex(16),
+        "plugins": "kewen-ai",
+    }
+    if XUNHUPAY_PAYMENT:
+        params["payment"] = XUNHUPAY_PAYMENT
+    params["hash"] = xunhupay_hash(params)
+
+    with db() as con:
+        con.execute(
+            """
+            INSERT INTO recharge_orders(
+                trade_order_id, user_id, amount_yuan, base_points, bonus_points,
+                total_points, status, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+            """,
+            (
+                trade_order_id,
+                user["id"],
+                float(amount),
+                base_points,
+                bonus_points,
+                total_points,
+                created_at,
+                created_at,
+            ),
+        )
+
+    try:
+        async with httpx.AsyncClient(timeout=30, trust_env=False, follow_redirects=True) as client:
+            response = await client.post(XUNHUPAY_GATEWAY, json=params)
+        data = response.json()
+    except Exception as exc:
+        with db() as con:
+            con.execute(
+                "UPDATE recharge_orders SET status = 'failed', updated_at = ? WHERE trade_order_id = ?",
+                (now_iso(), trade_order_id),
+            )
+        raise HTTPException(status_code=502, detail=f"Payment gateway request failed: {exc}")
+
+    errcode = data.get("errcode", data.get("code", 0)) if isinstance(data, dict) else 0
+    success_code = str(errcode) in {"0", "200", "success", "SUCCESS"}
+    if response.status_code >= 400 or not isinstance(data, dict) or not success_code:
+        message = data.get("errmsg") or data.get("message") or response.text[:500] if isinstance(data, dict) else response.text[:500]
+        with db() as con:
+            con.execute(
+                "UPDATE recharge_orders SET status = 'failed', updated_at = ? WHERE trade_order_id = ?",
+                (now_iso(), trade_order_id),
+            )
+        raise HTTPException(status_code=502, detail=f"Payment gateway rejected order: {message}")
+
+    pay_url = (
+        data.get("url")
+        or data.get("pay_url")
+        or data.get("payment_url")
+        or data.get("code_url")
+        or data.get("qrcode")
+        or data.get("qr_code")
+        or data.get("url_qrcode")
+    )
+    with db() as con:
+        con.execute(
+            "UPDATE recharge_orders SET pay_url = ?, updated_at = ? WHERE trade_order_id = ?",
+            (str(pay_url or ""), now_iso(), trade_order_id),
+        )
+
+    return {
+        "trade_order_id": trade_order_id,
+        "amount_yuan": float(amount),
+        "base_points": base_points,
+        "bonus_points": bonus_points,
+        "total_points": total_points,
+        "status": "pending",
+        "payment_url": pay_url,
+        "gateway_response": data,
+    }
+
+
+@app.post("/payment/hupijiao/notify")
+async def hupijiao_notify(request: Request) -> PlainTextResponse:
+    data = await parse_payment_callback(request)
+    if not data or not verify_xunhupay_hash(data):
+        return PlainTextResponse("fail", status_code=400)
+    if data.get("appid") and data.get("appid") != XUNHUPAY_APPID:
+        return PlainTextResponse("fail", status_code=400)
+
+    trade_order_id = data.get("trade_order_id") or data.get("out_trade_no") or ""
+    status = (data.get("status") or data.get("trade_status") or "").upper()
+    if not trade_order_id:
+        return PlainTextResponse("fail", status_code=400)
+
+    with db() as con:
+        order = con.execute(
+            "SELECT * FROM recharge_orders WHERE trade_order_id = ?",
+            (trade_order_id,),
+        ).fetchone()
+        if not order:
+            return PlainTextResponse("fail", status_code=404)
+        if order["status"] == "paid":
+            return PlainTextResponse("success")
+        if status != "OD":
+            con.execute(
+                "UPDATE recharge_orders SET raw_notify = ?, updated_at = ? WHERE trade_order_id = ?",
+                (json.dumps(data, ensure_ascii=False), now_iso(), trade_order_id),
+            )
+            return PlainTextResponse("success")
+
+        notified_amount = parse_money(data.get("total_fee") or data.get("money") or order["amount_yuan"])
+        expected_amount = Decimal(str(order["amount_yuan"])).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if notified_amount != expected_amount:
+            con.execute(
+                "UPDATE recharge_orders SET raw_notify = ?, updated_at = ? WHERE trade_order_id = ?",
+                (json.dumps(data, ensure_ascii=False), now_iso(), trade_order_id),
+            )
+            return PlainTextResponse("fail", status_code=400)
+
+        user_row = con.execute("SELECT points FROM users WHERE id = ?", (order["user_id"],)).fetchone()
+        if not user_row:
+            return PlainTextResponse("fail", status_code=404)
+
+        paid_at = now_iso()
+        new_points = int(user_row["points"]) + int(order["total_points"])
+        con.execute("UPDATE users SET points = ? WHERE id = ?", (new_points, order["user_id"]))
+        con.execute(
+            """
+            UPDATE recharge_orders
+            SET status = 'paid',
+                provider_transaction_id = ?,
+                raw_notify = ?,
+                paid_at = ?,
+                updated_at = ?
+            WHERE trade_order_id = ?
+            """,
+            (
+                data.get("transaction_id") or data.get("open_order_id") or data.get("order_id"),
+                json.dumps(data, ensure_ascii=False),
+                paid_at,
+                paid_at,
+                trade_order_id,
+            ),
+        )
+        con.execute(
+            """
+            INSERT INTO transactions(user_id, type, amount, balance_after, note, created_at)
+            VALUES (?, 'recharge', ?, ?, ?, ?)
+            """,
+            (
+                order["user_id"],
+                float(expected_amount),
+                new_points / 100,
+                f"Recharge {trade_order_id}: +{order['total_points']} points",
+                paid_at,
+            ),
+        )
+
+    return PlainTextResponse("success")
 
 
 async def create_image_task(
