@@ -884,7 +884,19 @@ const render = () => {
   wireEvents();
 };
 
+const paymentReturnOrderId = () => {
+  const params = new URLSearchParams(location.search);
+  return params.get("payment") === "return" ? params.get("trade_order_id") || "" : "";
+};
+
+const clearPaymentReturnUrl = () => {
+  if (!paymentReturnOrderId()) return;
+  history.replaceState({}, "", `${location.pathname || "/"}${location.hash || ""}`);
+};
+
 const boot = async () => {
+  const returnedOrderId = paymentReturnOrderId();
+  if (returnedOrderId) state.view = "billing";
   render();
   try {
     await loadModels();
@@ -893,7 +905,12 @@ const boot = async () => {
     if (state.user) {
       await loadTasks();
       await loadRechargeOrders();
+      if (returnedOrderId) {
+        await loadUser();
+        toast("支付已返回，余额和充值记录已刷新");
+      }
     }
+    clearPaymentReturnUrl();
   } catch (error) {
     toast(error.message);
   }
