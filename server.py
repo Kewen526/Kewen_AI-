@@ -961,7 +961,7 @@ def recharge_options() -> dict[str, Any]:
             }
         )
     return {
-        "provider": "xunhupay",
+        "provider": "payment",
         "minimum_amount_yuan": float(MIN_RECHARGE_YUAN),
         "points_per_yuan": 100,
         "bonus_rules": [

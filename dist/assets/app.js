@@ -449,8 +449,7 @@ const renderResultPanel = () => {
       <div class="result-toolbar">
         <div>
           <strong>最新结果</strong>
-          <span>${escapeHtml(formatDateTime(latest.created_at))}</span>
-          <span>${escapeHtml(imageRetentionText(latest))}</span>
+          <span>${escapeHtml(formatDateTime(latest.created_at))} · ${escapeHtml(imageRetentionText(latest))}</span>
         </div>
         <a href="${escapeHtml(latest.result_image_url)}" target="_blank" rel="noreferrer">打开原图</a>
       </div>
@@ -578,7 +577,7 @@ const renderBilling = () => `
       <div>
         <span class="eyebrow">Balance</span>
         <h1>账户充值</h1>
-        <p>支付完成并收到虎皮椒到账通知后，系统会自动把积分充入当前账户。最低充值 5 元，1 元 = 100 积分。</p>
+        <p>支付完成并收到到账通知后，系统会自动把积分充入当前账户。最低充值 5 元，1 元 = 100 积分。</p>
       </div>
       <div class="billing-balance">
         <span>当前积分</span>

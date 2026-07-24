@@ -575,29 +575,35 @@ a {
 }
 
 .result-toolbar {
-  min-height: 48px;
+  min-height: 38px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 0 18px;
+  padding: 0 14px;
   border-bottom: 1px solid var(--line);
 }
 
 .result-toolbar div {
-  display: grid;
-  gap: 2px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .result-toolbar span {
   color: var(--subtle);
-  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
 }
 
 .result-toolbar a {
   color: var(--brand);
   text-decoration: none;
-  font-size: 13px;
+  white-space: nowrap;
+  font-size: 12px;
 }
 
 .result-stage {
@@ -605,12 +611,12 @@ a {
   display: grid;
   place-items: center;
   background: #050506;
-  padding: 24px;
+  padding: 14px;
 }
 
 .result-stage img {
   max-width: 100%;
-  max-height: calc(100vh - 188px);
+  max-height: calc(100vh - 154px);
   object-fit: contain;
   border-radius: 14px;
   display: block;
