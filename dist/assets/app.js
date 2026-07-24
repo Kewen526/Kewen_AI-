@@ -536,24 +536,10 @@ const renderSidePanel = () => `
 `;
 
 const renderStudio = () => `
-  <main class="studio-page">
-    <section class="studio-hero">
-      <div>
-        <span class="eyebrow">AI Image Studio</span>
-        <h1>Nano Banana 图像生成工作台</h1>
-        <p>面向商品实拍、参考图改写和批量内容生产。选择模型、尺寸和清晰度，上传参考图后即可生成，结果默认保留 ${state.imageRetentionDays || 7} 天。</p>
-      </div>
-      <div class="studio-metrics">
-        <div><span>图像模型</span><strong>${familyOptions().length || 0}</strong></div>
-        <div><span>当前消耗</span><strong>${currentCost()} 分</strong></div>
-        <div><span>账户积分</span><strong>${Number(state.user?.points || 0).toLocaleString("zh-CN")}</strong></div>
-      </div>
-    </section>
-    <section class="studio-shell">
-      ${renderCreatePanel()}
-      ${renderResultPanel()}
-      ${renderSidePanel()}
-    </section>
+  <main class="studio-shell">
+    ${renderCreatePanel()}
+    ${renderResultPanel()}
+    ${renderSidePanel()}
   </main>
 `;
 
@@ -667,7 +653,7 @@ const renderApiDocs = () => {
         <div>
           <span class="eyebrow">Open API</span>
           <h1>Nano Banana 图像 API</h1>
-          <p>把网页端同款图像生成能力接入你的业务系统。API 使用公开模型 ID，后端负责匹配真实上游模型、失败切换、扣费和图片缓存。</p>
+          <p>把网页端同款图像生成能力接入你的业务系统。API 使用公开模型 ID，后端负责匹配真实上游模型、扣费和图片缓存。</p>
         </div>
         <div class="api-base">
           <span>Base URL</span>
@@ -832,7 +818,6 @@ const renderApiDocs = () => {
             <li><strong>成功扣费：</strong>只有生成成功并拿到图片后才扣积分。</li>
             <li><strong>失败不扣：</strong>上游错误、审核失败、超时失败均不会扣除生成积分。</li>
             <li><strong>图片保留：</strong>生成结果缓存在服务器 ${state.imageRetentionDays || 7} 天，到期自动清理。</li>
-            <li><strong>模型切换：</strong>Nano Banana Pro 遇到 5xx 错误时会尝试切换同规格备用模型。</li>
           </ul>
         </article>
         </div>

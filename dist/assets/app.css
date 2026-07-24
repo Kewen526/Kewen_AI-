@@ -282,71 +282,12 @@ a {
   box-shadow: 0 0 0 3px rgba(255, 180, 95, 0.12);
 }
 
-.studio-page {
-  padding: 16px;
-  display: grid;
-  gap: 14px;
-}
-
-.studio-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 14px;
-  align-items: stretch;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  padding: 22px 24px;
-  background:
-    linear-gradient(135deg, rgba(255, 174, 77, 0.15), rgba(140, 200, 255, 0.055)),
-    rgba(18, 18, 21, 0.74);
-  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.22);
-  backdrop-filter: blur(24px) saturate(1.12);
-}
-
-.studio-hero h1 {
-  margin: 8px 0;
-  font-size: clamp(28px, 3vw, 42px);
-  letter-spacing: 0;
-}
-
-.studio-hero p {
-  max-width: 760px;
-  margin: 0;
-  color: var(--muted);
-  line-height: 1.7;
-}
-
-.studio-metrics {
-  min-width: 360px;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.studio-metrics div {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 14px;
-  background: rgba(255, 255, 255, 0.055);
-}
-
-.studio-metrics span {
-  display: block;
-  color: var(--subtle);
-  font-size: 12px;
-}
-
-.studio-metrics strong {
-  display: block;
-  margin-top: 8px;
-  font-size: 24px;
-}
-
 .studio-shell {
   display: grid;
   grid-template-columns: 380px minmax(0, 1fr) 320px;
   gap: 14px;
-  min-height: calc(100vh - 230px);
+  padding: 16px;
+  min-height: calc(100vh - 58px);
 }
 
 .create-panel,
@@ -1431,7 +1372,6 @@ a {
 
 @media (max-width: 1040px) {
   .topbar,
-  .studio-hero,
   .studio-shell,
   .api-hero,
   .api-doc-layout,
@@ -1470,7 +1410,6 @@ a {
     overflow: auto;
   }
 
-  .studio-metrics,
   .api-model-grid {
     min-width: 0;
     grid-template-columns: 1fr;
@@ -1483,7 +1422,7 @@ a {
 
 @media (max-width: 640px) {
   .topbar,
-  .studio-page,
+  .studio-shell,
   .api-page,
   .billing-page {
     padding-left: 12px;
