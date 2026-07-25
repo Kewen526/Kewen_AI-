@@ -41,9 +41,19 @@ FLOW2API_URL = os.getenv("FLOW2API_URL", "http://43.155.157.57:38000/v1/chat/com
 FLOW2API_KEY = os.getenv("FLOW2API_KEY", "han1234")
 FLOW2API_TIMEOUT = float(os.getenv("FLOW2API_TIMEOUT", "360"))
 
-SITE_BASE_URL = os.getenv("SITE_BASE_URL", "https://nanobanan.vip").rstrip("/")
-API_BASE_URL = os.getenv("API_BASE_URL", "https://api.nanobanan.vip").rstrip("/")
-ALLOWED_SITE_HOSTS = {"nanobanan.vip", "www.nanobanan.vip", "api.nanobanan.vip", "kewenai.shop", "www.kewenai.shop", "api.kewenai.shop"}
+SITE_BASE_URL = os.getenv("SITE_BASE_URL", "https://nanobanana.vin").rstrip("/")
+API_BASE_URL = os.getenv("API_BASE_URL", "https://api.nanobanana.vin").rstrip("/")
+ALLOWED_SITE_HOSTS = {
+    "nanobanana.vin",
+    "www.nanobanana.vin",
+    "api.nanobanana.vin",
+    "nanobanan.vip",
+    "www.nanobanan.vip",
+    "api.nanobanan.vip",
+    "kewenai.shop",
+    "www.kewenai.shop",
+    "api.kewenai.shop",
+}
 
 XUNHUPAY_APPID = os.getenv("XUNHUPAY_APPID", os.getenv("HUPIJAO_APPID", ""))
 XUNHUPAY_APP_SECRET = os.getenv("XUNHUPAY_APP_SECRET", os.getenv("HUPIJAO_APP_SECRET", ""))

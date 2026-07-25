@@ -73,6 +73,9 @@ const escapeHtml = (value) =>
 const uniq = (items) => [...new Set(items.filter(Boolean))];
 
 const apiBaseUrl = () => {
+  if (["nanobanana.vin", "www.nanobanana.vin"].includes(location.hostname)) {
+    return "https://api.nanobanana.vin";
+  }
   if (["nanobanan.vip", "www.nanobanan.vip"].includes(location.hostname)) {
     return "https://api.nanobanan.vip";
   }
@@ -770,7 +773,7 @@ const renderApiDocs = () => {
   "status": "completed",
   "results": [
     {
-      "url": "https://api.nanobanan.vip/generated/xxxx.png",
+      "url": "https://api.nanobanana.vin/generated/xxxx.png",
       "content": "A clean product photo on a real shelf",
       "expires_at": "2026-07-31T12:00:00"
     }
