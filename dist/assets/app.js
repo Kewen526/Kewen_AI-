@@ -6,7 +6,7 @@ const state = {
   token: localStorage.getItem(tokenKey),
   user: null,
   authMode: "login",
-  view: "studio",
+  view: "home",
   models: [],
   selectedFamily: "",
   selectedAspect: "",
@@ -220,6 +220,7 @@ const authSubmit = async (event) => {
     state.token = payload.access_token;
     localStorage.setItem(tokenKey, state.token);
     state.user = payload;
+    state.view = "studio";
     await loadTasks();
     await loadRechargeOrders();
     render();
@@ -234,6 +235,7 @@ const logout = () => {
   state.user = null;
   state.tasks = [];
   state.rechargeOrders = [];
+  state.view = "home";
   render();
 };
 
@@ -366,9 +368,9 @@ const renderAuth = () => `
     <section class="auth-panel">
       <div class="auth-copy">
         <div class="brand"><div class="brand-mark">K</div><span>Kewen AI</span></div>
-        <div class="eyebrow">IMAGE STUDIO AND API</div>
-        <h1>商品实拍图生成工作台</h1>
-        <p>面向在线创作和系统接入的图片生成服务。网页端给用户简单清晰的创作入口，API 端提供同一套模型能力。</p>
+        <div class="eyebrow">Nano Banana Pro 国内版</div>
+        <h1>注册后立即体验 AI 商品图生成</h1>
+        <p>上传商品图，输入需求，即可生成适合电商主图、小红书内容和品牌投放的商业级图片。新用户注册赠送积分。</p>
       </div>
       <form class="auth-form" id="auth-form">
         <div class="auth-tabs">
@@ -394,6 +396,180 @@ const renderAuth = () => `
     </section>
   </main>
 `;
+
+const landingCtaView = () => state.user ? "studio" : "auth";
+
+const renderHomeCase = (item) => `
+  <article class="case-card">
+    <div class="case-images">
+      <div class="case-shot before">
+        <span>${escapeHtml(item.before)}</span>
+      </div>
+      <div class="case-arrow">→</div>
+      <div class="case-shot after ${escapeHtml(item.theme)}">
+        <span>${escapeHtml(item.after)}</span>
+      </div>
+    </div>
+    <div class="case-copy">
+      <strong>${escapeHtml(item.title)}</strong>
+      <p>${escapeHtml(item.desc)}</p>
+    </div>
+  </article>
+`;
+
+const renderHome = () => {
+  const cases = [
+    { before: "普通商品图", after: "电商高级主图", theme: "orange", title: "AI商品图生成", desc: "无需摄影棚，几秒生成商业级商品展示图。" },
+    { before: "衣服平铺图", after: "真人模特展示", theme: "blue", title: "AI模特试穿", desc: "保留服装版型和花色，生成更适合投放的模特图。" },
+    { before: "普通产品照片", after: "商业摄影效果", theme: "green", title: "产品摄影升级", desc: "把手机随手拍变成有光影、有场景的品牌图。" },
+    { before: "低质量图片", after: "高清优化图片", theme: "silver", title: "高清细节优化", desc: "提升质感、光线和画面完整度，适合主图和内容配图。" },
+  ];
+  const scenarios = [
+    ["电商卖家", "生成商品主图、详情页图片，快速测款。"],
+    ["服装行业", "平铺图、挂拍图转 AI 模特展示。"],
+    ["品牌设计", "生成广告海报、社媒视觉和产品场景图。"],
+    ["内容创作者", "为小红书、短视频、公众号快速配图。"],
+  ];
+  const advantages = [
+    ["速度", "秒级生成"],
+    ["价格", "一张低至0.05元"],
+    ["效果", "Nano Banana Pro模型"],
+    ["方便", "无需海外账号"],
+    ["稳定", "支持批量任务"],
+  ];
+  const packages = [
+    ["体验套餐", "¥5", "500积分", "适合先体验生成效果"],
+    ["轻量套餐", "¥10", "1,030积分", "赠送30积分"],
+    ["热门套餐", "¥100", "10,500积分", "赠送500积分"],
+    ["专业套餐", "¥1,000", "106,000积分", "赠送6,000积分"],
+  ];
+  return `
+    <main class="home-page">
+      <section class="home-hero" id="top">
+        <div class="hero-copy">
+          <span class="eyebrow">Nano Banana Pro 国内版</span>
+          <h1>AI商品图生成神器</h1>
+          <p>上传商品图，输入你的需求，快速生成适合淘宝、1688、小红书和短视频投放的商业级图片。</p>
+          <div class="hero-points">
+            <span>0.05元/张</span>
+            <span>满血模型</span>
+            <span>高速生成</span>
+            <span>支持批量创作</span>
+          </div>
+          <div class="hero-actions">
+            <button class="primary-btn hero-btn" data-view="${landingCtaView()}">立即免费体验</button>
+            <a class="ghost-link" href="#cases">查看生成案例</a>
+          </div>
+        </div>
+        <div class="hero-showcase" aria-label="AI商品图生成案例">
+          <div class="showcase-window source">
+            <span>原始商品图</span>
+            <strong>手机随手拍</strong>
+          </div>
+          <div class="showcase-window result">
+            <span>AI生成结果</span>
+            <strong>商业级主图</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="home-section" id="cases">
+        <div class="section-head">
+          <span class="eyebrow">Examples</span>
+          <h2>AI生成效果展示</h2>
+          <p>让用户先看到效果，再决定是否注册和充值。</p>
+        </div>
+        <div class="case-grid">${cases.map(renderHomeCase).join("")}</div>
+      </section>
+
+      <section class="home-section">
+        <div class="section-head">
+          <span class="eyebrow">Use Cases</span>
+          <h2>AI可以帮你做什么？</h2>
+        </div>
+        <div class="scenario-grid">
+          ${scenarios.map(([title, desc]) => `
+            <article class="scenario-card">
+              <strong>${escapeHtml(title)}</strong>
+              <p>${escapeHtml(desc)}</p>
+            </article>
+          `).join("")}
+        </div>
+      </section>
+
+      <section class="home-section advantage-section">
+        <div class="section-head">
+          <span class="eyebrow">Why Kewen AI</span>
+          <h2>为什么选择 Kewen AI</h2>
+        </div>
+        <div class="advantage-grid">
+          ${advantages.map(([title, desc]) => `
+            <div class="advantage-item">
+              <span>${escapeHtml(title)}</span>
+              <strong>${escapeHtml(desc)}</strong>
+            </div>
+          `).join("")}
+        </div>
+      </section>
+
+      <section class="home-section pricing-section">
+        <div class="section-head">
+          <span class="eyebrow">Pricing</span>
+          <h2>低成本开始 AI 生图</h2>
+          <p>充值后按积分扣费，失败任务不扣积分。</p>
+        </div>
+        <div class="home-pricing-grid">
+          ${packages.map(([name, price, points, note], index) => `
+            <article class="home-price-card ${index === 2 ? "featured" : ""}">
+              <span>${escapeHtml(name)}</span>
+              <strong>${escapeHtml(price)}</strong>
+              <p>${escapeHtml(points)}</p>
+              <small>${escapeHtml(note)}</small>
+              <button class="primary-btn" data-view="${state.user ? "billing" : "auth"}">立即购买</button>
+            </article>
+          `).join("")}
+        </div>
+      </section>
+
+      <section class="home-section flow-api-section">
+        <div class="workflow-card">
+          <span class="eyebrow">Workflow</span>
+          <h2>三步完成商品图生成</h2>
+          <ol>
+            <li><strong>上传图片</strong><span>商品图、参考图、场景图均可上传。</span></li>
+            <li><strong>输入需求</strong><span>描述想要的风格、场景和用途。</span></li>
+            <li><strong>下载结果</strong><span>生成后保存7天，可直接下载或复制图片地址。</span></li>
+          </ol>
+        </div>
+        <div class="api-intro-card">
+          <span class="eyebrow">Open API</span>
+          <h2>也可以接入你的业务系统</h2>
+          <p>支持通过 API 上传多张参考图、提交提示词、轮询任务结果，适合批量商品图生产。</p>
+          <button class="ghost-btn" data-view="api">查看 API 文档</button>
+        </div>
+      </section>
+
+      <section class="home-section faq-section">
+        <div class="section-head">
+          <span class="eyebrow">FAQ</span>
+          <h2>常见问题</h2>
+        </div>
+        <div class="faq-grid">
+          <details open><summary>Nano Banana Pro 国内可以使用吗？</summary><p>可以。Kewen AI 已经封装为国内可访问的网页和 API 服务，无需你自己准备海外账号。</p></details>
+          <details><summary>AI商品图怎么生成？</summary><p>上传商品图或参考图，输入你想要的场景和风格，点击生成即可。</p></details>
+          <details><summary>生成一张图片多少钱？</summary><p>按积分扣费，低规格模型约 5 积分/张，折合最低约 0.05 元/张。</p></details>
+          <details><summary>支持 API 吗？</summary><p>支持。登录后可在 API 接入页复制 API Key，并查看模型列表、上传参考图和轮询结果的示例。</p></details>
+        </div>
+      </section>
+
+      <section class="bottom-cta">
+        <h2>现在开始生成你的第一张 AI 商品图</h2>
+        <p>注册即送积分，先体验效果，再决定是否批量使用。</p>
+        <button class="primary-btn hero-btn" data-view="${landingCtaView()}">立即免费体验</button>
+      </section>
+    </main>
+  `;
+};
 
 const renderFamilyCard = (family) => `
   <button class="model-card ${family.id === state.selectedFamily ? "active" : ""}" data-family-id="${family.id}">
@@ -470,26 +646,12 @@ const renderCreatePanel = () => {
     <aside class="create-panel">
       <section class="field-group">
         <div class="group-title">
-          <strong>模型</strong>
-        </div>
-        <div class="model-list">
-          ${families.map(renderFamilyCard).join("") || `<div class="muted">${copy.noModel}</div>`}
-        </div>
-      </section>
-
-      <div class="split-controls">
-        ${renderSelector("尺寸", "图片比例", aspectOptions(), state.selectedAspect, "aspect")}
-        ${renderSelector("清晰度", "输出清晰度", resolutionOptions(), state.selectedResolution, "resolution")}
-      </div>
-
-      <section class="field-group">
-        <div class="group-title">
-          <strong>参考图</strong>
+          <strong>上传商品图</strong>
           <span>${state.files.length ? `${state.files.length} 张` : "可选"}</span>
         </div>
         <button class="upload-box" id="pick-files" type="button">
           <strong>选择图片</strong>
-          <span>支持多张，重复选择会继续追加</span>
+          <span>支持多张参考图，重复选择会继续追加</span>
         </button>
         <input id="file-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden />
         ${state.files.length ? `<div class="file-list">${state.files.map(renderFilePreview).join("")}</div>` : ""}
@@ -497,11 +659,29 @@ const renderCreatePanel = () => {
 
       <section class="field-group prompt-group">
         <div class="group-title">
-          <strong>提示词</strong>
+          <strong>输入生成需求</strong>
           <span id="prompt-count">${state.prompt.length}/900</span>
         </div>
         <textarea id="prompt-input" maxlength="900" placeholder="描述你想生成的商品实拍图，例如：把商品放在真实货架上，保持自然光线和普通手机拍摄质感。">${escapeHtml(state.prompt)}</textarea>
       </section>
+
+      <details class="advanced-settings">
+        <summary>高级设置</summary>
+        <section class="field-group">
+          <div class="group-title">
+            <strong>模型</strong>
+            <span>默认推荐即可</span>
+          </div>
+          <div class="model-list">
+            ${families.map(renderFamilyCard).join("") || `<div class="muted">${copy.noModel}</div>`}
+          </div>
+        </section>
+
+        <div class="split-controls">
+          ${renderSelector("尺寸", "图片比例", aspectOptions(), state.selectedAspect, "aspect")}
+          ${renderSelector("清晰度", "输出清晰度", resolutionOptions(), state.selectedResolution, "resolution")}
+        </div>
+      </details>
 
       <div class="generate-bar">
         <div>
@@ -870,6 +1050,7 @@ const renderWorkspace = () => `
     <header class="topbar">
       <div class="brand"><div class="brand-mark">K</div><span>Kewen AI</span></div>
       <nav class="main-nav">
+        <button class="${state.view === "home" ? "active" : ""}" data-view="home">首页</button>
         <button class="${state.view === "studio" ? "active" : ""}" data-view="studio">${copy.studio}</button>
         <button class="${state.view === "billing" ? "active" : ""}" data-view="billing">充值</button>
         <button class="${state.view === "api" ? "active" : ""}" data-view="api">${copy.api}</button>
@@ -880,10 +1061,30 @@ const renderWorkspace = () => `
         <button class="ghost-btn" id="logout-btn">${copy.logout}</button>
       </div>
     </header>
-    ${state.view === "api" ? renderApiDocs() : state.view === "billing" ? renderBilling() : renderStudio()}
+    ${state.view === "home" ? renderHome() : state.view === "api" ? renderApiDocs() : state.view === "billing" ? renderBilling() : renderStudio()}
     ${renderTaskModal()}
   </div>
 `;
+
+const renderPublicApp = () => {
+  if (state.view === "auth") return renderAuth();
+  return `
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand"><div class="brand-mark">K</div><span>Kewen AI</span></div>
+        <nav class="main-nav">
+          <button class="${state.view !== "api" ? "active" : ""}" data-view="home">首页</button>
+          <button class="${state.view === "api" ? "active" : ""}" data-view="api">${copy.api}</button>
+        </nav>
+        <div class="top-actions">
+          <button class="ghost-btn" data-view="auth">${copy.login}</button>
+          <button class="primary-btn" data-view="auth">免费体验</button>
+        </div>
+      </header>
+      ${state.view === "api" ? renderApiDocs() : renderHome()}
+    </div>
+  `;
+};
 
 const wireEvents = () => {
   document.querySelectorAll("[data-auth-mode]").forEach((button) => {
@@ -897,7 +1098,8 @@ const wireEvents = () => {
 
   document.querySelectorAll("[data-view]").forEach((button) => {
     button.addEventListener("click", async () => {
-      state.view = button.dataset.view;
+      const targetView = button.dataset.view;
+      state.view = !state.user && ["studio", "billing"].includes(targetView) ? "auth" : targetView;
       if (state.view === "billing") {
         try {
           if (!state.rechargeOptions) await loadRechargeOptions();
@@ -999,7 +1201,7 @@ const wireEvents = () => {
 };
 
 const render = () => {
-  app.innerHTML = `${state.token && state.user ? renderWorkspace() : renderAuth()}${state.toast ? `<div class="toast">${escapeHtml(state.toast)}</div>` : ""}`;
+  app.innerHTML = `${state.token && state.user ? renderWorkspace() : renderPublicApp()}${state.toast ? `<div class="toast">${escapeHtml(state.toast)}</div>` : ""}`;
   wireEvents();
 };
 
