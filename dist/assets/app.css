@@ -1366,18 +1366,18 @@ a {
 }
 
 .home-hero {
-  min-height: calc(100vh - 118px);
+  min-height: calc(100vh - 108px);
   display: grid;
   grid-template-columns: minmax(0, 0.92fr) minmax(420px, 1fr);
   align-items: center;
   gap: 34px;
-  padding: 54px 0 42px;
+  padding: 46px 0 38px;
 }
 
 .hero-copy h1 {
   margin: 14px 0 14px;
   max-width: 720px;
-  font-size: clamp(42px, 6vw, 82px);
+  font-size: clamp(42px, 5.4vw, 76px);
   line-height: 1.02;
   letter-spacing: 0;
 }
@@ -1435,13 +1435,13 @@ a {
 
 .hero-showcase {
   position: relative;
-  min-height: 520px;
+  min-height: 500px;
   border: 1px solid var(--line);
-  border-radius: 28px;
+  border-radius: 26px;
   overflow: hidden;
   background:
-    radial-gradient(circle at 72% 20%, rgba(255, 181, 91, 0.32), transparent 260px),
-    radial-gradient(circle at 10% 80%, rgba(117, 196, 255, 0.2), transparent 240px),
+    radial-gradient(circle at 72% 20%, rgba(255, 181, 91, 0.24), transparent 260px),
+    radial-gradient(circle at 10% 80%, rgba(117, 196, 255, 0.15), transparent 240px),
     rgba(255, 255, 255, 0.045);
   box-shadow: var(--shadow);
 }
@@ -1466,9 +1466,19 @@ a {
   min-height: 56%;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 22px;
-  padding: 22px;
-  background: linear-gradient(145deg, rgba(255,255,255,0.1), rgba(255,255,255,0.025));
+  padding: 0;
+  overflow: hidden;
+  background: rgba(255,255,255,0.04);
   box-shadow: 0 28px 70px rgba(0, 0, 0, 0.38);
+}
+
+.showcase-window::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 46%;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.76));
+  z-index: 1;
 }
 
 .showcase-window.source {
@@ -1487,7 +1497,17 @@ a {
 .showcase-window span,
 .showcase-window strong {
   position: relative;
-  z-index: 1;
+  z-index: 2;
+  margin-left: 22px;
+  margin-right: 22px;
+}
+
+.showcase-window img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .showcase-window span {
@@ -1496,6 +1516,7 @@ a {
 }
 
 .showcase-window strong {
+  margin-bottom: 22px;
   font-size: 28px;
 }
 
@@ -1552,6 +1573,13 @@ a {
 
 .case-card {
   overflow: hidden;
+  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+
+.case-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.062);
 }
 
 .case-images {
@@ -1563,12 +1591,12 @@ a {
 }
 
 .case-shot {
+  position: relative;
   min-height: 180px;
-  display: grid;
-  place-items: end start;
+  margin: 0;
   border-radius: 14px;
-  padding: 14px;
   color: #fff;
+  overflow: hidden;
   background:
     linear-gradient(135deg, rgba(255,255,255,0.1), rgba(255,255,255,0.02)),
     radial-gradient(circle at 24% 20%, rgba(255,255,255,0.22), transparent 120px);
@@ -1579,16 +1607,48 @@ a {
 .case-shot.after.green { background-color: rgba(72, 211, 139, 0.18); }
 .case-shot.after.silver { background-color: rgba(230, 232, 239, 0.14); }
 
-.case-shot span {
+.case-shot img {
+  width: 100%;
+  height: 100%;
+  min-height: 180px;
+  display: block;
+  object-fit: cover;
+  transition: transform 220ms ease;
+}
+
+.case-card:hover .case-shot img {
+  transform: scale(1.025);
+}
+
+.case-shot::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 44%;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.62));
+}
+
+.case-shot figcaption {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 1;
   border-radius: 999px;
   padding: 7px 10px;
-  background: rgba(0,0,0,0.36);
+  background: rgba(0,0,0,0.52);
+  backdrop-filter: blur(12px);
   font-size: 12px;
 }
 
 .case-arrow {
   color: var(--brand);
   font-weight: 900;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(255, 180, 95, 0.1);
 }
 
 .case-copy,
@@ -1723,21 +1783,18 @@ a {
 }
 
 .advanced-settings {
+  display: grid;
+  gap: 14px;
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 12px;
   background: rgba(255, 255, 255, 0.035);
 }
 
-.advanced-settings summary {
-  cursor: pointer;
+.advanced-title {
   color: var(--text);
   font-weight: 760;
-}
-
-.advanced-settings[open] {
-  display: grid;
-  gap: 14px;
+  font-size: 13px;
 }
 
 @media (max-width: 1460px) {
@@ -1889,7 +1946,7 @@ a {
   .showcase-window {
     width: 68%;
     min-height: 52%;
-    padding: 16px;
+    padding: 0;
   }
 
   .showcase-window.source {
