@@ -398,21 +398,18 @@ const renderAuth = () => `
 `;
 
 const landingCtaView = () => state.user ? "studio" : "auth";
-const caseAsset = (name) => `assets/cases/${name}.svg?v=20260726`;
+const caseAsset = (name) => `assets/cases/${name}.webp?v=20260727`;
 
 const renderHomeCase = (item) => `
   <article class="case-card">
-    <div class="case-images">
-      <figure class="case-shot before">
-        <img src="${escapeHtml(item.beforeImg)}" alt="${escapeHtml(item.before)}" loading="lazy" />
-        <figcaption>${escapeHtml(item.before)}</figcaption>
-      </figure>
-      <div class="case-arrow">→</div>
-      <figure class="case-shot after ${escapeHtml(item.theme)}">
-        <img src="${escapeHtml(item.afterImg)}" alt="${escapeHtml(item.after)}" loading="lazy" />
-        <figcaption>${escapeHtml(item.after)}</figcaption>
-      </figure>
-    </div>
+    <figure class="case-comparison">
+      <img src="${escapeHtml(item.image)}" alt="${escapeHtml(item.before)}到${escapeHtml(item.after)}" loading="lazy" />
+      <figcaption>
+        <span>${escapeHtml(item.before)}</span>
+        <strong>→</strong>
+        <span>${escapeHtml(item.after)}</span>
+      </figcaption>
+    </figure>
     <div class="case-copy">
       <strong>${escapeHtml(item.title)}</strong>
       <p>${escapeHtml(item.desc)}</p>
@@ -422,10 +419,10 @@ const renderHomeCase = (item) => `
 
 const renderHome = () => {
   const cases = [
-    { before: "普通商品图", after: "电商高级主图", beforeImg: caseAsset("product-before"), afterImg: caseAsset("product-after"), theme: "orange", title: "AI商品图生成", desc: "把白底或随手拍商品图改造成有布光、有场景的商业主图。" },
-    { before: "衣服平铺图", after: "真人模特展示", beforeImg: caseAsset("fashion-before"), afterImg: caseAsset("fashion-after"), theme: "blue", title: "AI模特试穿", desc: "保留服装版型和花色，生成更适合详情页、小红书投放的模特图。" },
-    { before: "普通产品照片", after: "商业摄影效果", beforeImg: caseAsset("photo-before"), afterImg: caseAsset("photo-after"), theme: "green", title: "产品摄影升级", desc: "把手机随手拍变成有光影、有层次、有品牌感的产品场景图。" },
-    { before: "低质量图片", after: "高清优化图片", beforeImg: caseAsset("hd-before"), afterImg: caseAsset("hd-after"), theme: "silver", title: "高清细节优化", desc: "提升质感、光线和画面完整度，适合主图、内容配图和广告素材。" },
+    { before: "普通商品图", after: "电商高级主图", image: caseAsset("case-product-main"), title: "AI商品图生成", desc: "把白底或随手拍商品图改造成有布光、有场景的商业主图。" },
+    { before: "衣服平铺图", after: "真人模特展示", image: caseAsset("case-fashion-tryon"), title: "AI模特试穿", desc: "保留服装版型和花色，生成更适合详情页、小红书投放的模特图。" },
+    { before: "普通产品照片", after: "商业摄影效果", image: caseAsset("case-product-photo"), title: "产品摄影升级", desc: "把手机随手拍变成有光影、有层次、有品牌感的产品场景图。" },
+    { before: "低质量图片", after: "高清优化图片", image: caseAsset("case-hd-enhance"), title: "高清细节优化", desc: "提升质感、光线和画面完整度，适合主图、内容配图和广告素材。" },
   ];
   const scenarios = [
     ["电商卖家", "生成商品主图、详情页图片，快速测款。"],
@@ -466,12 +463,12 @@ const renderHome = () => {
         </div>
         <div class="hero-showcase" aria-label="AI商品图生成案例">
           <div class="showcase-window source">
-            <img src="${caseAsset("product-before")}" alt="原始商品图" loading="eager" />
+            <img src="${caseAsset("case-product-main")}" alt="原始商品图到AI生成商业主图" loading="eager" />
             <span>原始商品图</span>
             <strong>手机随手拍</strong>
           </div>
           <div class="showcase-window result">
-            <img src="${caseAsset("product-after")}" alt="AI生成商业主图" loading="eager" />
+            <img src="${caseAsset("case-product-main")}" alt="AI生成商业主图" loading="eager" />
             <span>AI生成结果</span>
             <strong>商业级主图</strong>
           </div>
@@ -1086,7 +1083,7 @@ const renderPublicApp = () => {
           <button class="primary-btn" data-view="auth">免费体验</button>
         </div>
       </header>
-      ${state.view === "api" ? renderApiDocs() : renderHome()}
+      ${renderHome()}
     </div>
   `;
 };
@@ -1104,7 +1101,7 @@ const wireEvents = () => {
   document.querySelectorAll("[data-view]").forEach((button) => {
     button.addEventListener("click", async () => {
       const targetView = button.dataset.view;
-      state.view = !state.user && ["studio", "billing"].includes(targetView) ? "auth" : targetView;
+      state.view = !state.user && ["studio", "billing", "api"].includes(targetView) ? "auth" : targetView;
       if (state.view === "billing") {
         try {
           if (!state.rechargeOptions) await loadRechargeOptions();
