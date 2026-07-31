@@ -883,7 +883,7 @@ const renderApiDocs = () => {
                   <strong>${escapeHtml(family.name)}</strong>
                 </div>
                 <p>${escapeHtml(family.description || "")}</p>
-                <small>${escapeHtml(family.id === "nano-banana-pro" ? "1K 6 分 · 2K 7 分 · 4K 9 分" : "1K 5 分 · 2K 6 分 · 4K 7 分")}</small>
+                <small>${escapeHtml(family.id === "nano-banana-pro" ? "1K 6 分 · 2K 7 分" : "1K 5 分 · 2K 6 分")}</small>
               </div>
             `).join("")}
           </div>
@@ -927,7 +927,7 @@ const renderApiDocs = () => {
                 <tr><td><code>model</code></td><td>String</td><td>是</td><td>公开模型 ID，例如 <code>${escapeHtml(exampleModel)}</code>。</td></tr>
                 <tr><td><code>prompt</code></td><td>String</td><td>是</td><td>描述你想生成的图像。</td></tr>
                 <tr><td><code>aspect_ratio</code></td><td>Enum</td><td>否</td><td><code>auto</code>、<code>1:1</code>、<code>16:9</code>、<code>9:16</code>、<code>4:3</code>、<code>3:4</code>。</td></tr>
-                <tr><td><code>image_size</code></td><td>Enum</td><td>否</td><td><code>1K</code>、<code>2K</code>、<code>4K</code>。</td></tr>
+                <tr><td><code>image_size</code></td><td>Enum</td><td>否</td><td><code>1K</code>、<code>2K</code>。4K 暂不开放。</td></tr>
                 <tr><td><code>image_urls</code></td><td>Array</td><td>否</td><td>公网可访问的参考图 URL 列表。</td></tr>
                 <tr><td><code>webhook_url</code></td><td>String</td><td>否</td><td>任务完成或失败时接收回调，必须是 HTTPS。</td></tr>
               </tbody>
