@@ -67,12 +67,10 @@ IMAGE_COSTS = {
     "nano-banana-2": {
         "1K": 5,
         "2K": 6,
-        "4K": 7,
     },
     "nano-banana-pro": {
         "1K": 6,
         "2K": 7,
-        "4K": 9,
     },
 }
 
@@ -117,7 +115,7 @@ ASPECT_LABELS = {
     "3:4": "Three Fourths",
 }
 
-RESOLUTIONS = ["1K", "2K", "4K"]
+RESOLUTIONS = ["1K", "2K"]
 
 
 def new_api_key() -> str:
@@ -274,7 +272,16 @@ def current_user(authorization: Optional[str] = Header(default=None)) -> dict[st
 
 def normalize_resolution(resolution: str) -> str:
     value = (resolution or "1K").strip().upper()
-    return value if value in RESOLUTIONS else "1K"
+    if value not in RESOLUTIONS:
+        raise HTTPException(status_code=400, detail=f"Unsupported image resolution: {value}. 4K is currently disabled.")
+    return value
+
+
+def validate_image_request(model: str, resolution: str) -> str:
+    value = normalize_resolution(resolution)
+    if "4k" in (model or "").lower():
+        raise HTTPException(status_code=400, detail="4K image generation is currently disabled.")
+    return value
 
 
 def public_aspect_token(aspect_ratio: str) -> str:
@@ -1231,6 +1238,7 @@ async def create_image_task(
     started = time.monotonic()
     created_at = now_iso()
     task_id = "task_" + secrets.token_urlsafe(12)
+    resolution = validate_image_request(model, resolution)
     cost = model_cost(model, resolution)
     attempted_errors: list[str] = []
 
@@ -1305,8 +1313,8 @@ async def submit_image_generation(
     aspect_ratio = "1:1" if body.aspect_ratio == "auto" else body.aspect_ratio
     if aspect_ratio not in ASPECT_SUFFIX:
         raise HTTPException(status_code=400, detail=f"Unsupported aspect_ratio: {body.aspect_ratio}")
-    resolution = normalize_resolution(body.image_size)
     model = body.model or "nano-banana-2"
+    resolution = validate_image_request(model, body.image_size)
     if not model_family_id(model) and model not in public_model_catalog_lookup():
         raise HTTPException(status_code=400, detail=f"Unsupported image model: {model}")
 
