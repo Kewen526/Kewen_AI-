@@ -607,11 +607,13 @@ a {
 }
 
 .result-stage {
+  position: relative;
   min-height: 500px;
   display: grid;
   place-items: center;
   background: #050506;
   padding: 14px;
+  overflow: hidden;
 }
 
 .result-stage img {
@@ -624,6 +626,7 @@ a {
 }
 
 .result-panel.empty {
+  position: relative;
   min-height: 500px;
   place-items: center;
   align-content: center;
@@ -650,6 +653,103 @@ a {
   border-radius: 14px;
   border: 1px solid var(--line-strong);
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.04));
+}
+
+.generation-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 50% 45%, rgba(255, 181, 89, 0.18), transparent 36%),
+    rgba(0, 0, 0, 0.58);
+  backdrop-filter: blur(10px);
+}
+
+.generation-card {
+  width: min(420px, 92%);
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 22px;
+  background: linear-gradient(145deg, rgba(36, 36, 39, 0.92), rgba(14, 14, 16, 0.92));
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.52);
+}
+
+.generation-ring {
+  --progress: 0;
+  width: 76px;
+  height: 76px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle, #141416 57%, transparent 58%),
+    conic-gradient(#ffb24d calc(var(--progress) * 1%), rgba(255, 255, 255, 0.12) 0);
+}
+
+.generation-ring span {
+  color: #fff;
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.generation-copy {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.generation-copy strong {
+  color: #fff;
+  font-size: 18px;
+}
+
+.generation-copy span {
+  color: rgba(255, 255, 255, 0.66);
+  line-height: 1.5;
+  font-size: 13px;
+}
+
+.generation-track {
+  grid-column: 1 / -1;
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.generation-track i {
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #fff4d8, #ffad43);
+  transition: width 0.55s ease;
+}
+
+.generation-overlay.success .generation-ring {
+  background:
+    radial-gradient(circle, #141416 57%, transparent 58%),
+    conic-gradient(#31d081 calc(var(--progress) * 1%), rgba(255, 255, 255, 0.12) 0);
+}
+
+.generation-overlay.success .generation-track i {
+  background: linear-gradient(90deg, #b9ffd8, #31d081);
+}
+
+.generation-overlay.error .generation-ring {
+  background:
+    radial-gradient(circle, #141416 57%, transparent 58%),
+    conic-gradient(#ff6464 calc(var(--progress) * 1%), rgba(255, 255, 255, 0.12) 0);
+}
+
+.generation-overlay.error .generation-track i {
+  background: linear-gradient(90deg, #ffc1c1, #ff6464);
 }
 
 .side-panel {
