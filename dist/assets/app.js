@@ -18,9 +18,77 @@ const state = {
   imageRetentionDays: 7,
   selectedTaskId: "",
   generating: false,
+  generationProgress: null,
   recharging: false,
   prompt: "",
   toast: "",
+};
+
+let generationProgressTimer = null;
+
+const stopGenerationProgress = () => {
+  if (generationProgressTimer) {
+    clearInterval(generationProgressTimer);
+    generationProgressTimer = null;
+  }
+};
+
+const generationStage = (progress, hasFiles) => {
+  if (progress < 18) return hasFiles ? "上传参考图" : "准备生成任务";
+  if (progress < 36) return "提交生成请求";
+  if (progress < 78) return "AI 正在生成";
+  if (progress < 94) return "保存生成结果";
+  return "即将完成";
+};
+
+const startGenerationProgress = (hasFiles) => {
+  stopGenerationProgress();
+  const startedAt = Date.now();
+  state.generationProgress = {
+    status: "running",
+    value: hasFiles ? 8 : 12,
+    title: hasFiles ? "正在上传参考图" : "正在准备生成",
+    detail: "请保持当前页面打开，生成结果会显示在这里。",
+  };
+  render();
+  generationProgressTimer = setInterval(() => {
+    const elapsedSeconds = (Date.now() - startedAt) / 1000;
+    const eased = 1 - Math.exp(-elapsedSeconds / 18);
+    const value = Math.min(92, Math.round((hasFiles ? 8 : 12) + eased * 82));
+    state.generationProgress = {
+      status: "running",
+      value,
+      title: generationStage(value, hasFiles),
+      detail: value < 36 ? "图片和提示词已提交，正在进入生成队列。" : "模型正在处理画面细节，通常需要几十秒。",
+    };
+    render();
+  }, 700);
+};
+
+const finishGenerationProgress = (durationSeconds) => {
+  stopGenerationProgress();
+  state.generationProgress = {
+    status: "success",
+    value: 100,
+    title: "生成完成",
+    detail: `用时 ${durationSeconds.toFixed(1)} 秒，结果已保存到最近任务。`,
+  };
+  setTimeout(() => {
+    if (state.generationProgress?.status === "success") {
+      state.generationProgress = null;
+      render();
+    }
+  }, 1600);
+};
+
+const failGenerationProgress = (message) => {
+  stopGenerationProgress();
+  state.generationProgress = {
+    status: "error",
+    value: 100,
+    title: "生成失败",
+    detail: message || "生成请求失败，请稍后重试。",
+  };
 };
 
 const copy = {
@@ -246,7 +314,7 @@ const generate = async () => {
   if (!state.prompt.trim()) return toast(copy.noPrompt);
 
   state.generating = true;
-  render();
+  startGenerationProgress(Boolean(state.files.length));
   const started = performance.now();
   try {
     let task;
@@ -272,15 +340,14 @@ const generate = async () => {
     }
     state.tasks = [task, ...state.tasks.filter((item) => item.task_id !== task.task_id)];
     await loadUser();
-    toast(`生成完成，用时 ${((performance.now() - started) / 1000).toFixed(1)} 秒`);
+    finishGenerationProgress((performance.now() - started) / 1000);
   } catch (error) {
-    toast(error.message);
+    failGenerationProgress(error.message);
   } finally {
     state.generating = false;
     render();
   }
 };
-
 const createRecharge = async (amount) => {
   if (state.recharging) return;
   const numericAmount = Number(amount);
@@ -614,12 +681,36 @@ const renderTask = (task) => {
   `;
 };
 
+const renderGenerationOverlay = () => {
+  const progress = state.generationProgress;
+  if (!progress) return "";
+  const value = Math.max(0, Math.min(100, Number(progress.value) || 0));
+  const statusClass = progress.status === "error" ? "error" : progress.status === "success" ? "success" : "running";
+  return `
+    <div class="generation-overlay ${statusClass}">
+      <div class="generation-card">
+        <div class="generation-ring" style="--progress:${value}">
+          <span>${Math.round(value)}%</span>
+        </div>
+        <div class="generation-copy">
+          <strong>${escapeHtml(progress.title)}</strong>
+          <span>${escapeHtml(progress.detail)}</span>
+        </div>
+        <div class="generation-track">
+          <i style="width:${value}%"></i>
+        </div>
+      </div>
+    </div>
+  `;
+};
+
 const renderResultPanel = () => {
   const latest = latestSuccessfulTask();
   if (!latest) {
     return `
       <section class="result-panel empty">
         <div class="empty-visual"></div>
+        ${renderGenerationOverlay()}
         <strong>结果会显示在这里</strong>
         <span>上传参考图、填写提示词后点击生成。完成后可以直接打开原图，历史结果会保留在右侧任务里。</span>
       </section>
@@ -636,6 +727,7 @@ const renderResultPanel = () => {
       </div>
       <div class="result-stage">
         <img src="${escapeHtml(latest.result_image_url)}" alt="最新生成结果" />
+        ${renderGenerationOverlay()}
       </div>
     </section>
   `;
